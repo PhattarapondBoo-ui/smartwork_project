@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-thai), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Red & White theme — primary #D32F2F */
+@theme {
+  --color-brand-50: #fdeeee;
+  --color-brand-100: #fbd9d9;
+  --color-brand-200: #f5b0b0;
+  --color-brand-300: #ec8080;
+  --color-brand-500: #e04848;
+  --color-brand-600: #d32f2f;
+  --color-brand-700: #b71c1c;
+  --color-brand-800: #8f1414;
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: #f8f8f8;
+  color: #111827;
+  -webkit-font-smoothing: antialiased;
+}
