@@ -1,7 +1,6 @@
 import { getApps, initializeApp, type FirebaseApp, type FirebaseOptions } from "firebase/app";
 import { getAuth, initializeAuth, inMemoryPersistence, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
-import { getStorage, type FirebaseStorage } from "firebase/storage";
 
 // NEXT_PUBLIC_* vars must be referenced literally so Next.js can inline them.
 const firebaseConfig: FirebaseOptions = {
@@ -26,7 +25,6 @@ interface FirebaseHandles {
   app: FirebaseApp;
   auth: Auth;
   db: Firestore;
-  storage: FirebaseStorage;
 }
 
 let primary: FirebaseHandles | null = null;
@@ -41,7 +39,7 @@ export function fb(): FirebaseHandles {
       throw new Error("ยังไม่ได้ตั้งค่า Firebase: คัดลอก .env.local.example เป็น .env.local แล้วกรอกค่า");
     }
     const app = getApps().find((a) => a.name === "[DEFAULT]") ?? initializeApp(firebaseConfig);
-    primary = { app, auth: getAuth(app), db: getFirestore(app), storage: getStorage(app) };
+    primary = { app, auth: getAuth(app), db: getFirestore(app) };
   }
   return primary;
 }

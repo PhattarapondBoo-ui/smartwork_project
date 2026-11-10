@@ -1,6 +1,6 @@
 # Worklist Management
 
-ระบบติดตามและตรวจสอบงานที่มอบหมาย — Next.js 15 + TypeScript + Tailwind CSS + Firebase (Auth, Firestore, Storage)
+ระบบติดตามและตรวจสอบงานที่มอบหมาย — Next.js 15 + TypeScript + Tailwind CSS + Firebase (Auth, Firestore) — ใช้แพ็กเกจฟรี (Spark) ได้
 ธีมสีแดง-ขาว (#D32F2F / #FFFFFF) รองรับมือถือเต็มรูปแบบ
 
 ## ฟีเจอร์
@@ -30,7 +30,7 @@ src/
     api.ts                        ทุกการอ่าน/เขียน Firebase อยู่ที่นี่ไฟล์เดียว
     auth-context.tsx              สถานะ login + โปรไฟล์ (เตะผู้ใช้ที่ถูกปิดออกทันที)
     firebase.ts  types.ts  status.ts  format.ts  image.ts
-firestore.rules  storage.rules    สิทธิ์จริงบังคับที่นี่ (ฝั่ง server)
+firestore.rules                  สิทธิ์จริงบังคับที่นี่ (ฝั่ง server)
 ```
 
 ## โครงสร้างฐานข้อมูล (Firestore)
@@ -40,7 +40,8 @@ firestore.rules  storage.rules    สิทธิ์จริงบังคั�
 | `users/{uid}` | username, name, phone, role (`employer`/`employee`), status (`active`/`inactive`), created_at, updated_at |
 | `users/{uid}/password_history/{id}` | user_id, changed_at |
 | `tasks/{id}` | code (T-0001), title, description, location, assigned_type (`all`/`user`), assigned_user, assigned_user_name, status, due_date, is_archived, archived_at, created_by, created_by_name, created_at, updated_at, claimed_at, last_submitted_at |
-| `tasks/{id}/submissions/{id}` | task_id, user_id, user_name, note, image_urls[], image_paths[], submitted_at, review_status, review_note, reviewed_by, reviewed_by_name, reviewed_at |
+| `tasks/{id}/submissions/{id}` | task_id, user_id, user_name, note, image_count, submitted_at, review_status, review_note, reviewed_by, reviewed_by_name, reviewed_at |
+| `tasks/{id}/submissions/{id}/images/{id}` | data (รูป JPEG แบบ data URL ย่อเหลือไม่เกิน ~500KB), index, user_id, created_at — 1 รูปต่อ 1 เอกสาร |
 | `meta/setup`, `meta/counters` | ใช้ภายในระบบ |
 
 > **รหัสผ่านไม่ถูกเก็บใน Firestore** — Firebase Authentication จัดการและเข้ารหัสให้
@@ -54,7 +55,7 @@ firestore.rules  storage.rules    สิทธิ์จริงบังคั�
 1. ไปที่ https://console.firebase.google.com → **Add project**
 2. **Build › Authentication › Get started** → เปิด **Email/Password**
 3. **Build › Firestore Database › Create database** (Production mode, region `asia-southeast1`)
-4. **Build › Storage › Get started** (ต้องใช้แพ็กเกจ **Blaze** — มีโควต้าฟรี, ใช้จริงจำนวนน้อยแทบไม่เสียเงิน)
+4. (ไม่ต้องเปิด Storage — รูปถูกเก็บใน Firestore)
 5. **Project settings › General › Your apps › Web (</>)** → ลงทะเบียนแอป แล้วคัดลอกค่า config
 
 ### 2. ตั้งค่าและรันบนเครื่อง
@@ -90,7 +91,8 @@ npm run deploy:rules
 
 - **ลบงาน = Archive**: ไม่มีการลบจริง (`allow delete: if false`) กู้คืนได้ตลอด และ Employer เห็นงาน Archived ในตัวกรอง "ทั้งหมด"
 - **รับงานได้คนเดียว**: ใช้ Firestore transaction + security rule ตรวจว่างานยัง `open` และยังไม่มีผู้รับ — ถ้าสองคนกดพร้อมกัน คนที่สองจะได้ข้อความ "งานนี้มีผู้รับไปแล้ว"
-- **รูปภาพ**: ย่อขนาดในเบราว์เซอร์ (ด้านยาวสุด 1600px, JPEG) ก่อนอัปโหลด สูงสุด 10 รูป/ครั้ง, 10MB/รูป
+- **รูปภาพ**: เก็บใน Firestore (ไม่ต้องใช้ Storage/Blaze) โดยย่อในเบราว์เซอร์เป็น JPEG ด้านยาวสุด 1280px ไม่เกิน ~500KB ต่อรูป สูงสุด 10 รูป/ครั้ง — แพ็กเกจฟรีเก็บได้ 1GB (ประมาณ 4,000–6,000 รูป)
+- **ลบรูปเก่าอัตโนมัติ**: รูปที่ส่งมาเกิน 60 วันจะถูกลบ (หมายเหตุ ผลตรวจ และประวัติยังอยู่) ทำงานในเบราว์เซอร์ของ Employer ตอนเปิดหน้ารายการงาน วันละครั้ง — ข้ามงานที่ยังรอตรวจ ปรับจำนวนวันได้ที่ `IMAGE_RETENTION_DAYS` ใน `src/lib/api.ts`
 - **ปิดการใช้งานผู้ใช้**: ผู้ใช้ที่ `inactive` ถูก sign-out ทันทีและ rules ปฏิเสธทุกการเข้าถึง
 - **เพิ่มผู้ใช้โดยไม่ต้องมี backend**: ใช้ Firebase app instance ที่สองสร้างบัญชี ทำให้ Employer ไม่ถูก logout
 - **รีเซ็ตรหัสผ่านให้ผู้อื่น**: ทำที่ Firebase Console › Authentication (ถ้าต้องการปุ่มในระบบ ต่อยอดได้ด้วย Next.js API route + `firebase-admin`)
@@ -103,4 +105,4 @@ npm run deploy:rules
 | `npm run dev` | รัน development server |
 | `npm run build` / `npm start` | build และรัน production |
 | `npm run typecheck` | ตรวจ TypeScript |
-| `npm run deploy:rules` | deploy Firestore/Storage rules |
+| `npm run deploy:rules` | deploy Firestore rules |

@@ -29,8 +29,6 @@ const AUTH_MESSAGES: Record<string, string> = {
   "auth/network-request-failed": "เชื่อมต่อเครือข่ายไม่ได้",
   "auth/requires-recent-login": "กรุณาเข้าสู่ระบบใหม่แล้วลองอีกครั้ง",
   "permission-denied": "ไม่มีสิทธิ์ทำรายการนี้",
-  "storage/unauthorized": "ไม่มีสิทธิ์อัปโหลดไฟล์",
-  "storage/quota-exceeded": "พื้นที่จัดเก็บไฟล์เต็ม",
   unavailable: "เชื่อมต่อฐานข้อมูลไม่ได้ กรุณาลองใหม่",
 };
 

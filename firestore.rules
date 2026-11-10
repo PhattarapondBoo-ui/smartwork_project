@@ -2,29 +2,84 @@ rules_version = '2';
 
 // Worklist Management — Firestore security rules.
 // The UI hides buttons, but THESE rules are what actually enforce roles.
+// All helper functions live at the top level (no nested-scope functions).
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function signedIn() { return request.auth != null; }
-    function userPath(uid) { return /databases/$(database)/documents/users/$(uid); }
-    function me() { return get(userPath(request.auth.uid)).data; }
-    function isActive() {
-      return signedIn() && exists(userPath(request.auth.uid)) && me().status == 'active';
+    // ------------------------------------------------------------ helpers
+    function signedIn() {
+      return request.auth != null;
     }
-    function isEmployer() { return isActive() && me().role == 'employer'; }
-    function changedKeys() { return request.resource.data.diff(resource.data).affectedKeys(); }
+
+    function userDoc(uid) {
+      return /databases/$(database)/documents/users/$(uid);
+    }
+
+    function isActive() {
+      return signedIn()
+        && exists(userDoc(request.auth.uid))
+        && get(userDoc(request.auth.uid)).data.status == 'active';
+    }
+
+    function isEmployer() {
+      return isActive() && get(userDoc(request.auth.uid)).data.role == 'employer';
+    }
+
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    function taskData(taskId) {
+      return get(/databases/$(database)/documents/tasks/$(taskId)).data;
+    }
+
+    function submissionAfter(taskId, submissionId) {
+      return getAfter(/databases/$(database)/documents/tasks/$(taskId)/submissions/$(submissionId)).data;
+    }
+
+    function isAssignee(taskId) {
+      return isActive() && taskData(taskId).assigned_user == request.auth.uid;
+    }
+
+    // Employee claims an open task ("all users" task nobody holds yet,
+    // or a task assigned specifically to them).
+    function isClaim() {
+      return resource.data.status == 'open'
+        && (resource.data.assigned_user == null || resource.data.assigned_user == request.auth.uid)
+        && request.resource.data.status == 'claimed'
+        && request.resource.data.assigned_user == request.auth.uid
+        && changedKeys().hasOnly(['status', 'assigned_user', 'assigned_user_name', 'claimed_at', 'updated_at']);
+    }
+
+    // Assignee moves their own task forward.
+    function isProgress() {
+      return resource.data.assigned_user == request.auth.uid
+        && request.resource.data.assigned_user == request.auth.uid
+        && (
+          (resource.data.status == 'claimed' && request.resource.data.status == 'in_progress')
+          || (resource.data.status == 'rejected' && request.resource.data.status == 'in_progress')
+          || (resource.data.status in ['claimed', 'in_progress', 'rejected']
+              && request.resource.data.status == 'pending_review')
+        )
+        && changedKeys().hasOnly(['status', 'updated_at', 'last_submitted_at']);
+    }
 
     // ---------------------------------------------------------------- meta
     // meta/setup exists once the first employer has been created.
     match /meta/setup {
       allow read: if true; // login page checks it before anyone signs in
       allow create: if signedIn()
-        && getAfter(userPath(request.auth.uid)).data.role == 'employer';
+        && getAfter(userDoc(request.auth.uid)).data.role == 'employer';
       allow update, delete: if false;
     }
 
     // meta/counters holds the running number used for task codes (T-0001).
     match /meta/counters {
+      allow read, write: if isEmployer();
+    }
+
+    // meta/cleanup remembers when old photos were last purged (once a day).
+    match /meta/cleanup {
       allow read, write: if isEmployer();
     }
 
@@ -47,42 +102,17 @@ service cloud.firestore {
             && changedKeys().hasOnly(['name', 'phone', 'updated_at']));
 
       allow delete: if false; // users are deactivated, never deleted
+    }
 
-      match /password_history/{entryId} {
-        allow read: if (signedIn() && request.auth.uid == userId) || isEmployer();
-        allow create: if signedIn() && request.auth.uid == userId
-          && request.resource.data.user_id == userId;
-        allow update, delete: if false;
-      }
+    match /users/{userId}/password_history/{entryId} {
+      allow read: if (signedIn() && request.auth.uid == userId) || isEmployer();
+      allow create: if signedIn() && request.auth.uid == userId
+        && request.resource.data.user_id == userId;
+      allow update, delete: if false;
     }
 
     // --------------------------------------------------------------- tasks
     match /tasks/{taskId} {
-      function t() { return resource.data; }
-      function n() { return request.resource.data; }
-
-      // Employee claims an open task. Works for "all users" tasks nobody holds
-      // yet, and for tasks assigned specifically to them.
-      function isClaim() {
-        return t().status == 'open'
-          && (t().assigned_user == null || t().assigned_user == request.auth.uid)
-          && n().status == 'claimed'
-          && n().assigned_user == request.auth.uid
-          && changedKeys().hasOnly(['status', 'assigned_user', 'assigned_user_name', 'claimed_at', 'updated_at']);
-      }
-
-      // Assignee moves their own task forward.
-      function isProgress() {
-        return t().assigned_user == request.auth.uid
-          && n().assigned_user == request.auth.uid
-          && (
-            (t().status == 'claimed' && n().status == 'in_progress')
-            || (t().status == 'rejected' && n().status == 'in_progress')
-            || (t().status in ['claimed', 'in_progress', 'rejected'] && n().status == 'pending_review')
-          )
-          && changedKeys().hasOnly(['status', 'updated_at', 'last_submitted_at']);
-      }
-
       allow read: if isEmployer()
         || (isActive() && (resource.data.assigned_type == 'all'
                            || resource.data.assigned_user == request.auth.uid));
@@ -92,31 +122,50 @@ service cloud.firestore {
         && request.resource.data.is_archived == false;
 
       allow update: if isEmployer()
-        || (isActive() && t().is_archived == false && (isClaim() || isProgress()));
+        || (isActive() && resource.data.is_archived == false && (isClaim() || isProgress()));
 
       allow delete: if false; // "delete" in the UI = archive (is_archived = true)
+    }
 
-      // ------------------------------------------------- submissions
-      match /submissions/{submissionId} {
-        function task() { return get(/databases/$(database)/documents/tasks/$(taskId)).data; }
+    // ------------------------------------------------------- submissions
+    match /tasks/{taskId}/submissions/{submissionId} {
+      allow read: if isEmployer() || isAssignee(taskId);
 
-        allow read: if isEmployer()
-          || (isActive() && task().assigned_user == request.auth.uid);
+      allow create: if isAssignee(taskId)
+        && taskData(taskId).is_archived == false
+        && request.resource.data.user_id == request.auth.uid
+        && request.resource.data.task_id == taskId
+        && request.resource.data.review_status == 'pending'
+        && request.resource.data.image_count is int
+        && request.resource.data.image_count <= 10;
 
-        allow create: if isActive()
-          && task().assigned_user == request.auth.uid
-          && task().is_archived == false
-          && request.resource.data.user_id == request.auth.uid
-          && request.resource.data.task_id == taskId
-          && request.resource.data.review_status == 'pending'
-          && request.resource.data.image_urls.size() <= 10;
+      allow update: if isEmployer() && (
+        // Review decision
+        (request.resource.data.review_status in ['approved', 'rejected']
+          && changedKeys().hasOnly(['review_status', 'review_note', 'reviewed_by', 'reviewed_by_name', 'reviewed_at']))
+        // Old-photo cleanup marks the submission; note and review stay.
+        || changedKeys().hasOnly(['images_deleted_at'])
+      );
 
-        allow update: if isEmployer()
-          && request.resource.data.review_status in ['approved', 'rejected']
-          && changedKeys().hasOnly(['review_status', 'review_note', 'reviewed_by', 'reviewed_by_name', 'reviewed_at']);
+      allow delete: if false; // keep full submission history
+    }
 
-        allow delete: if false; // keep full submission history
-      }
+    // Photos: one JPEG data URL per document (Firestore max is 1 MiB/doc).
+    match /tasks/{taskId}/submissions/{submissionId}/images/{imageId} {
+      allow read: if isEmployer() || isAssignee(taskId);
+
+      // Only written in the same batch as its submission, by the submitter.
+      allow create: if isActive()
+        && request.resource.data.user_id == request.auth.uid
+        && submissionAfter(taskId, submissionId).user_id == request.auth.uid
+        && request.resource.data.data is string
+        && request.resource.data.data.size() <= 750000
+        && request.resource.data.index is int
+        && request.resource.data.index < submissionAfter(taskId, submissionId).image_count;
+
+      allow update: if false; // evidence is never edited
+      // Employers' browsers delete photos older than 60 days (see purgeOldImages).
+      allow delete: if isEmployer();
     }
   }
 }

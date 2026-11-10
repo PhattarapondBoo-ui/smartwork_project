@@ -48,14 +48,19 @@ export function SubmitWorkForm({ task, me }: { task: Task; me: AppUser }) {
     setSubmitting(true);
     try {
       await submitWork(task, me, note, files.map((f) => f.file), (done, total) =>
-        setProgress(`กำลังอัปโหลดรูป ${done}/${total}`),
+        setProgress(`กำลังเตรียมรูป ${done}/${total}`),
       );
       files.forEach((f) => URL.revokeObjectURL(f.url));
       setFiles([]);
       setNote("");
       toast.success("ส่งงานเรียบร้อย รอตรวจสอบ");
     } catch (err) {
-      setError(errMsg(err));
+      // The form can unmount while saving (the task briefly shows "pending review"
+      // before the server answers), so report failures through the global toast too.
+      console.error("submitWork failed", err);
+      const msg = `ส่งงานไม่สำเร็จ: ${errMsg(err)}`;
+      setError(msg);
+      toast.error(msg);
     } finally {
       setSubmitting(false);
       setProgress(null);

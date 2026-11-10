@@ -1,6 +1,6 @@
 /**
  * All reads/writes to Firebase live here so pages stay thin.
- * Security is enforced by firestore.rules / storage.rules — the checks below
+ * Security is enforced by firestore.rules — the checks below
  * only give friendlier error messages.
  */
 import {
@@ -16,21 +16,22 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
   runTransaction,
   serverTimestamp,
   setDoc,
+  Timestamp,
   updateDoc,
   where,
   writeBatch,
   type DocumentSnapshot,
   type Unsubscribe,
 } from "firebase/firestore";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { fb, secondary, usernameToEmail } from "./firebase";
-import { compressImage, extFor } from "./image";
+import { compressToDataUrl } from "./image";
 import type { AppUser, AssignedType, Role, Submission, Task, UserStatus } from "./types";
 
 type OnError = (e: Error) => void;
@@ -213,28 +214,31 @@ export async function submitWork(
   files: File[],
   onProgress?: (done: number, total: number) => void,
 ) {
-  const { db, storage } = fb();
-  const urls: string[] = [];
-  const paths: string[] = [];
-  const stamp = Date.now();
+  const { db } = fb();
+  // Shrink every photo first so a bad file fails before anything is written.
+  const images: string[] = [];
   for (let i = 0; i < files.length; i++) {
-    const blob = await compressImage(files[i]);
-    const type = blob.type || "image/jpeg";
-    const path = `submissions/${task.id}/${me.id}/${stamp}-${i}.${extFor(type)}`;
-    const fileRef = ref(storage, path);
-    await uploadBytes(fileRef, blob, { contentType: type });
-    urls.push(await getDownloadURL(fileRef));
-    paths.push(path);
+    images.push(await compressToDataUrl(files[i]));
     onProgress?.(i + 1, files.length);
   }
+
+  // Submission + its images + task status go in one atomic batch.
   const batch = writeBatch(db);
-  batch.set(doc(collection(db, "tasks", task.id, "submissions")), {
+  const subRef = doc(collection(db, "tasks", task.id, "submissions"));
+  images.forEach((data, index) => {
+    batch.set(doc(collection(subRef, "images")), {
+      data,
+      index,
+      user_id: me.id,
+      created_at: serverTimestamp(),
+    });
+  });
+  batch.set(subRef, {
     task_id: task.id,
     user_id: me.id,
     user_name: me.name,
     note: note.trim(),
-    image_urls: urls,
-    image_paths: paths,
+    image_count: images.length,
     submitted_at: serverTimestamp(),
     review_status: "pending",
     review_note: "",
@@ -248,6 +252,74 @@ export async function submitWork(
     last_submitted_at: serverTimestamp(),
   });
   await batch.commit();
+}
+
+/** Images of one submission, in the order they were attached (as data URLs). */
+export async function getSubmissionImages(taskId: string, submissionId: string): Promise<string[]> {
+  const snap = await getDocs(collection(fb().db, "tasks", taskId, "submissions", submissionId, "images"));
+  return snap.docs
+    .map((d) => d.data() as { data: string; index: number })
+    .sort((a, b) => a.index - b.index)
+    .map((d) => d.data);
+}
+
+/* ---------------------------------------------------- old-image cleanup */
+
+/** Photos older than this are deleted to keep Firestore under the free 1 GB. */
+export const IMAGE_RETENTION_DAYS = 60;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Deletes photos of submissions older than IMAGE_RETENTION_DAYS. The note,
+ * review result and history entry are kept; only the images go.
+ *
+ * There is no server on the free plan, so this runs in the browser of an
+ * Employer when they open the worklist, at most once a day (meta/cleanup).
+ * Submissions still waiting for review are skipped so nothing unreviewed is lost.
+ * Returns the number of photos deleted.
+ */
+export async function purgeOldImages(tasks: Task[]): Promise<number> {
+  const { db } = fb();
+  const metaRef = doc(db, "meta", "cleanup");
+  const meta = await getDoc(metaRef);
+  const lastRun = meta.exists() ? (meta.data().last_run as Timestamp | undefined) : undefined;
+  if (lastRun && Date.now() - lastRun.toMillis() < DAY_MS) return 0;
+  await setDoc(metaRef, { last_run: serverTimestamp() }, { merge: true });
+
+  const cutoffMs = Date.now() - IMAGE_RETENTION_DAYS * DAY_MS;
+  const cutoff = Timestamp.fromMillis(cutoffMs);
+  let deleted = 0;
+
+  for (const t of tasks) {
+    // A submission can't be older than its task.
+    if (!t.created_at || t.created_at.toMillis() >= cutoffMs || !t.last_submitted_at) continue;
+    // Already cleaned and nothing submitted since.
+    if (t.images_cleaned_at && t.images_cleaned_at.toMillis() > t.last_submitted_at.toMillis()) continue;
+
+    const old = await getDocs(
+      query(collection(db, "tasks", t.id, "submissions"), where("submitted_at", "<", cutoff)),
+    );
+    let skippedPending = false;
+    for (const s of old.docs) {
+      const d = s.data() as Submission;
+      if (d.images_deleted_at || !d.image_count) continue;
+      if (d.review_status === "pending") {
+        skippedPending = true;
+        continue;
+      }
+      const images = await getDocs(collection(s.ref, "images"));
+      const batch = writeBatch(db);
+      images.docs.forEach((img) => batch.delete(img.ref));
+      batch.update(s.ref, { images_deleted_at: serverTimestamp() });
+      await batch.commit();
+      deleted += images.size;
+    }
+    // Mark the task done only if every submission is past the cutoff and handled.
+    if (!skippedPending && t.last_submitted_at.toMillis() < cutoffMs) {
+      await updateDoc(doc(db, "tasks", t.id), { images_cleaned_at: serverTimestamp() });
+    }
+  }
+  return deleted;
 }
 
 export async function reviewSubmission(

@@ -1,32 +1,40 @@
 /**
- * Shrink a photo in the browser before upload (phone photos are often 4–10 MB).
- * Falls back to the original file if the browser can't decode it.
+ * Photos are stored inside Firestore as JPEG data URLs (one image per document).
+ * A Firestore document can hold at most 1 MiB, so every image is shrunk in the
+ * browser until its data URL fits comfortably under MAX_DATA_URL_CHARS.
  */
-export async function compressImage(file: File, maxDim = 1600, quality = 0.82): Promise<Blob> {
-  if (!file.type.startsWith("image/") || file.type === "image/gif") return file;
-  try {
-    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" } as ImageBitmapOptions);
-    const scale = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
-    const w = Math.round(bmp.width * scale);
-    const h = Math.round(bmp.height * scale);
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return file;
-    ctx.drawImage(bmp, 0, 0, w, h);
-    bmp.close();
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
-    return blob && blob.size < file.size ? blob : file;
-  } catch {
-    return file;
-  }
-}
+export const MAX_DATA_URL_CHARS = 700_000; // ≈ 500 KB of JPEG once base64-encoded
 
-export function extFor(type: string) {
-  if (type === "image/png") return "png";
-  if (type === "image/webp") return "webp";
-  if (type === "image/gif") return "gif";
-  if (type === "image/heic" || type === "image/heif") return "heic";
-  return "jpg";
+const QUALITIES = [0.8, 0.7, 0.6, 0.5];
+
+export async function compressToDataUrl(file: File, maxDim = 1280): Promise<string> {
+  let bmp: ImageBitmap;
+  try {
+    bmp = await createImageBitmap(file, { imageOrientation: "from-image" } as ImageBitmapOptions);
+  } catch {
+    throw new Error(`เปิดไฟล์รูป "${file.name}" ไม่ได้ กรุณาใช้ไฟล์ JPG หรือ PNG`);
+  }
+  try {
+    let dim = maxDim;
+    // Lower quality first, then resolution, until it fits.
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const scale = Math.min(1, dim / Math.max(bmp.width, bmp.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(bmp.width * scale));
+      canvas.height = Math.max(1, Math.round(bmp.height * scale));
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("เบราว์เซอร์นี้ไม่รองรับการย่อรูป");
+      ctx.fillStyle = "#ffffff"; // transparent PNG areas become white, not black
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+      for (const q of QUALITIES) {
+        const url = canvas.toDataURL("image/jpeg", q);
+        if (url.length <= MAX_DATA_URL_CHARS) return url;
+      }
+      dim = Math.round(dim * 0.75);
+    }
+    throw new Error(`รูป "${file.name}" มีขนาดใหญ่เกินไป`);
+  } finally {
+    bmp.close();
+  }
 }

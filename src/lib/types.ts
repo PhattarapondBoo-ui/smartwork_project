@@ -51,6 +51,8 @@ export interface Task {
   updated_at: Timestamp | null;
   claimed_at: Timestamp | null;
   last_submitted_at: Timestamp | null;
+  /** Set by the old-image cleanup once every submission of this task has had its photos removed. */
+  images_cleaned_at?: Timestamp | null;
 }
 
 /** Firestore: tasks/{taskId}/submissions/{id} */
@@ -60,8 +62,10 @@ export interface Submission {
   user_id: string;
   user_name: string;
   note: string;
-  image_urls: string[];
-  image_paths: string[];
+  /** Images live in tasks/{taskId}/submissions/{id}/images/{imageId} as { data, index }. */
+  image_count: number;
+  /** When the photos were removed by the automatic cleanup (note and review are kept). */
+  images_deleted_at?: Timestamp | null;
   submitted_at: Timestamp | null;
   review_status: ReviewStatus;
   review_note: string;

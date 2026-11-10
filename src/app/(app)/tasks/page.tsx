@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { useProfile } from "@/lib/auth-context";
-import { claimTask, setArchived, subscribeAllTasks, subscribeEmployeeTasks } from "@/lib/api";
+import { claimTask, purgeOldImages, setArchived, subscribeAllTasks, subscribeEmployeeTasks } from "@/lib/api";
 import { errMsg } from "@/lib/format";
 import type { Task } from "@/lib/types";
 import { StatCards, type StatKey } from "@/components/StatCards";
@@ -26,6 +26,9 @@ const FILTERS: { key: FilterKey; label: string; only?: "employer" | "employee" }
 
 const ACTIVE: Task["status"][] = ["claimed", "in_progress", "rejected"];
 
+// Old-photo cleanup runs at most once per page load (and once a day overall, see purgeOldImages).
+let cleanupStarted = false;
+
 export default function TasksPage() {
   const me = useProfile();
   const toast = useToast();
@@ -40,6 +43,15 @@ export default function TasksPage() {
     const onErr = (e: Error) => setError(errMsg(e));
     return isEmployer ? subscribeAllTasks(setTasks, onErr) : subscribeEmployeeTasks(me.id, setTasks, onErr);
   }, [isEmployer, me.id]);
+
+  // Employers' browsers delete photos older than 60 days in the background.
+  useEffect(() => {
+    if (!isEmployer || !tasks || cleanupStarted) return;
+    cleanupStarted = true;
+    purgeOldImages(tasks)
+      .then((n) => n > 0 && toast.success(`ลบรูปที่เก่ากว่า 60 วันแล้ว ${n} รูป เพื่อประหยัดพื้นที่`))
+      .catch((e) => console.warn("Old-image cleanup failed", e));
+  }, [isEmployer, tasks, toast]);
 
   const stats = useMemo(() => {
     const live = (tasks ?? []).filter((t) => !t.is_archived);
