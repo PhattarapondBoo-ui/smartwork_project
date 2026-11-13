@@ -107,7 +107,12 @@ service cloud.firestore {
       allow update: if isEmployer()
         // Everyone may edit their own basic info, but not role/status/username.
         || (isActive() && request.auth.uid == userId
-            && changedKeys().hasOnly(['name', 'phone', 'promptpay_id', 'updated_at']));
+            && changedKeys().hasOnly(['name', 'phone', 'promptpay_id', 'promptpay_updated_at', 'promptpay_previous', 'updated_at'])
+            // Changing PromptPay must record when and the old number, so the
+            // admin gets a warning before the next payout (anti account-takeover).
+            && (!('promptpay_id' in changedKeys())
+                || (request.resource.data.promptpay_updated_at == request.time
+                    && request.resource.data.promptpay_previous == resource.data.get('promptpay_id', ''))));
 
       allow delete: if false; // users are deactivated, never deleted
     }

@@ -26,7 +26,7 @@ import {
   subscribeUsers,
 } from "@/lib/api";
 import { errMsg, fmtTs } from "@/lib/format";
-import { formatBaht, formatPromptPayId } from "@/lib/promptpay";
+import { formatBaht, formatPromptPayId, maskPromptPayId, promptpayRisk, type PromptPayRisk } from "@/lib/promptpay";
 import { isUnpaid } from "@/lib/status";
 import { WITHHOLDING_RATE, WITHHOLDING_THRESHOLD, payBreakdown } from "@/lib/tax";
 import type { AppSettings, AppUser, Payment, Task } from "@/lib/types";
@@ -123,6 +123,12 @@ function EmployerPayments({
   const unpaid = tasks.filter(isUnpaid);
   const noPrice = tasks.filter((t) => t.status === "approved" && !(t.price ?? 0) && !t.payment_id && !t.is_archived);
   const usersById = new Map(users.map((u) => [u.id, u]));
+  // PromptPay used for each person's most recent payment (payments are newest first).
+  const lastPaidPromptpay = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of payments) if (p.promptpay_id && !m.has(p.employee_id)) m.set(p.employee_id, p.promptpay_id);
+    return m;
+  }, [payments]);
 
   // Group unpaid tasks by the freelancer who did them.
   const groups = useMemo(() => {
@@ -164,6 +170,7 @@ function EmployerPayments({
                   employee={employee}
                   tasks={list}
                   withholdingEnabled={settings.withholding_enabled}
+                  risk={promptpayRisk(employee, lastPaidPromptpay.get(uid))}
                   onPay={(sel) => setPaying({ employee, tasks: sel })}
                 />
               );
@@ -203,6 +210,7 @@ function EmployerPayments({
           employee={paying.employee}
           tasks={paying.tasks}
           withholdingEnabled={settings.withholding_enabled}
+          risk={promptpayRisk(paying.employee, lastPaidPromptpay.get(paying.employee.id))}
           onClose={() => setPaying(null)}
         />
       )}
@@ -277,11 +285,13 @@ function EmployeeDueCard({
   employee,
   tasks,
   withholdingEnabled,
+  risk,
   onPay,
 }: {
   employee: AppUser;
   tasks: Task[];
   withholdingEnabled: boolean;
+  risk: PromptPayRisk | null;
   onPay: (selected: Task[]) => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set(tasks.map((t) => t.id)));
@@ -305,7 +315,15 @@ function EmployeeDueCard({
         <div className="min-w-0 flex-1">
           <p className="truncate font-medium text-gray-900">{employee.name}</p>
           {employee.promptpay_id ? (
-            <p className="text-xs text-gray-500">พร้อมเพย์ {formatPromptPayId(employee.promptpay_id)}</p>
+            <>
+              <p className="text-xs text-gray-500">พร้อมเพย์ {formatPromptPayId(employee.promptpay_id)}</p>
+              {risk && (
+                <p className="mt-1 inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-amber-200">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  {risk.recent ? "เพิ่งเปลี่ยนพร้อมเพย์" : "พร้อมเพย์ไม่ตรงกับครั้งก่อน"}
+                </p>
+              )}
+            </>
           ) : (
             <p className="flex items-center gap-1 text-xs text-amber-700">
               <AlertTriangle className="h-3.5 w-3.5" /> ยังไม่ได้ตั้งพร้อมเพย์
@@ -355,14 +373,18 @@ function PayModal({
   employee,
   tasks,
   withholdingEnabled,
+  risk,
   onClose,
 }: {
   me: AppUser;
   employee: AppUser;
   tasks: Task[];
   withholdingEnabled: boolean;
+  risk: PromptPayRisk | null;
   onClose: () => void;
 }) {
+  // If the PromptPay changed, hide the QR until the admin confirms it with the person.
+  const [verified, setVerified] = useState(!risk);
   const toast = useToast();
   const pay = payBreakdown(sum(tasks), withholdingEnabled);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -397,7 +419,34 @@ function PayModal({
       <div className="space-y-5">
         {error && <Alert kind="error">{error}</Alert>}
 
-        {employee.promptpay_id ? (
+        {risk && (
+          <div className="rounded-lg bg-amber-50 p-4 text-sm text-amber-900 ring-1 ring-amber-200">
+            <p className="flex items-center gap-1.5 font-semibold">
+              <AlertTriangle className="h-4 w-4" /> ตรวจสอบพร้อมเพย์ก่อนโอน
+            </p>
+            <p className="mt-1.5 leading-relaxed">
+              {risk.recent && risk.changedAt
+                ? `${employee.name} เปลี่ยนพร้อมเพย์เมื่อ ${risk.changedAt.toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" })}`
+                : `พร้อมเพย์ของ ${employee.name} ไม่ตรงกับเลขที่ใช้โอนครั้งก่อน`}
+              {risk.previous && ` (เดิมลงท้าย ${maskPromptPayId(risk.previous)} → ใหม่ ${formatPromptPayId(employee.promptpay_id)})`}
+            </p>
+            <p className="mt-1.5 leading-relaxed">
+              ถ้าบัญชีของผู้รับจ้างถูกผู้อื่นเข้าใช้ เงินอาจถูกโอนไปผิดคน — <strong>โทรหรือคุยกับ {employee.name} โดยตรง</strong>
+              เพื่อยืนยันเลขใหม่ อย่ายืนยันผ่านข้อความในแอปหรือแชทอย่างเดียว
+            </p>
+            <label className="mt-3 flex cursor-pointer items-start gap-2 font-medium">
+              <input
+                type="checkbox"
+                checked={verified}
+                onChange={(e) => setVerified(e.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-[var(--color-brand-600)]"
+              />
+              ฉันยืนยันกับ {employee.name} โดยตรงแล้วว่าพร้อมเพย์ใหม่ถูกต้อง
+            </label>
+          </div>
+        )}
+
+        {employee.promptpay_id && !verified ? null : employee.promptpay_id ? (
           <>
             <PromptPayQR promptpayId={employee.promptpay_id} amount={pay.net} name={employee.name} />
             <ol className="space-y-1 text-sm text-gray-600">
@@ -489,7 +538,7 @@ function PayModal({
           <Button variant="ghost" onClick={onClose}>
             ยกเลิก
           </Button>
-          <Button loading={saving} onClick={() => void save()}>
+          <Button loading={saving} disabled={!verified} onClick={() => void save()}>
             <CheckCircle2 className="h-4 w-4" /> บันทึกว่าจ่ายแล้ว
           </Button>
         </div>

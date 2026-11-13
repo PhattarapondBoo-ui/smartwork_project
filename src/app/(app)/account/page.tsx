@@ -53,7 +53,7 @@ export default function AccountPage() {
     }
     setSavingProfile(true);
     try {
-      await updateMyProfile(me.id, profile);
+      await updateMyProfile(me.id, profile, me.promptpay_id);
       toast.success("บันทึกข้อมูลส่วนตัวแล้ว");
     } catch (err) {
       setProfileErr(errMsg(err));
@@ -120,7 +120,7 @@ export default function AccountPage() {
             </Field>
             <Field
               label="พร้อมเพย์สำหรับรับค่าตอบแทน"
-              hint="เบอร์มือถือ 10 หลัก หรือเลขบัตรประชาชน 13 หลัก — ผู้ดูแลจะใช้สร้าง QR โอนค่าตอบแทนให้คุณ"
+              hint="เบอร์มือถือ 10 หลัก หรือเลขบัตรประชาชน 13 หลัก — ผู้ดูแลจะใช้สร้าง QR โอนค่าตอบแทนให้คุณ ถ้าเปลี่ยนเลข ผู้ดูแลจะได้รับคำเตือนให้ยืนยันกับคุณก่อนโอนครั้งถัดไป"
             >
               <Input
                 inputMode="numeric"

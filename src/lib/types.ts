@@ -25,6 +25,9 @@ export interface AppUser {
   phone?: string;
   /** PromptPay ID for receiving pay (mobile 10 digits / national ID 13 / e-wallet 15). Digits only. */
   promptpay_id?: string;
+  /** When the PromptPay ID was last changed, and what it was before (for payout safety checks). */
+  promptpay_updated_at?: Timestamp | null;
+  promptpay_previous?: string;
   role: Role;
   status: UserStatus;
   created_at: Timestamp | null;

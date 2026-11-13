@@ -10,6 +10,8 @@
  *   - e-wallet ID:     15 digits
  */
 
+import type { AppUser } from "./types";
+
 const AID_PROMPTPAY = "A000000677010111";
 
 function field(id: string, value: string) {
@@ -76,6 +78,40 @@ export function promptPayPayload(rawId: string, amount?: number) {
   return body + crc16(body);
 }
 
+/** A PromptPay change this recent triggers a warning before paying. */
+export const PROMPTPAY_CHANGE_WARN_DAYS = 7;
+
+/** "081-xxx-5678" style masking for showing an old number without exposing it fully. */
+export function maskPromptPayId(raw: string | undefined | null) {
+  const id = normalizePromptPayId(raw ?? "");
+  if (!id) return "-";
+  return `${"•".repeat(Math.max(0, id.length - 4))}${id.slice(-4)}`;
+}
+
 export function formatBaht(n: number) {
   return `฿${n.toLocaleString("th-TH", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+}
+
+export interface PromptPayRisk {
+  /** Changed within PROMPTPAY_CHANGE_WARN_DAYS days (and there was an old number). */
+  recent: boolean;
+  changedAt: Date | null;
+  /** Current number differs from the one used for this person's last payment. */
+  differsFromLast: boolean;
+  previous: string;
+}
+
+/** Should we warn before paying this person? (guards against hijacked accounts) */
+export function promptpayRisk(employee: Pick<AppUser, "promptpay_id" | "promptpay_updated_at" | "promptpay_previous">, lastPaidPromptpay?: string): PromptPayRisk | null {
+  const current = normalizePromptPayId(employee.promptpay_id ?? "");
+  if (!current) return null;
+  const changedAt = employee.promptpay_updated_at?.toDate() ?? null;
+  const recent =
+    !!changedAt &&
+    !!employee.promptpay_previous &&
+    Date.now() - changedAt.getTime() < PROMPTPAY_CHANGE_WARN_DAYS * 24 * 60 * 60 * 1000;
+  const last = normalizePromptPayId(lastPaidPromptpay ?? "");
+  const differsFromLast = !!last && last !== current;
+  if (!recent && !differsFromLast) return null;
+  return { recent, changedAt, differsFromLast, previous: differsFromLast ? last : employee.promptpay_previous ?? "" };
 }

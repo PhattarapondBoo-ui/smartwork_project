@@ -418,11 +418,19 @@ export async function updateUser(
   await updateDoc(doc(fb().db, "users", id), { ...patch, updated_at: serverTimestamp() });
 }
 
-export async function updateMyProfile(uid: string, patch: { name: string; phone: string; promptpay_id: string }) {
+export async function updateMyProfile(
+  uid: string,
+  patch: { name: string; phone: string; promptpay_id: string },
+  previousPromptpay?: string,
+) {
+  const next = normalizePromptPayId(patch.promptpay_id);
+  const prev = normalizePromptPayId(previousPromptpay ?? "");
   await updateDoc(doc(fb().db, "users", uid), {
     name: patch.name.trim(),
     phone: patch.phone.trim(),
-    promptpay_id: normalizePromptPayId(patch.promptpay_id),
+    promptpay_id: next,
+    // Remember changes so the admin is warned before the next payout.
+    ...(next !== prev ? { promptpay_updated_at: serverTimestamp(), promptpay_previous: prev } : {}),
     updated_at: serverTimestamp(),
   });
 }
