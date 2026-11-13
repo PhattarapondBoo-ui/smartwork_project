@@ -1,27 +1,90 @@
 @import "tailwindcss";
 
 @theme inline {
-  --font-sans: var(--font-thai), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-brand), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-brand), ui-sans-serif, system-ui, sans-serif;
 }
 
-/* Red & White theme — primary #D32F2F */
-@theme {
-  --color-brand-50: #fdeeee;
-  --color-brand-100: #fbd9d9;
-  --color-brand-200: #f5b0b0;
-  --color-brand-300: #ec8080;
-  --color-brand-500: #e04848;
-  --color-brand-600: #d32f2f;
-  --color-brand-700: #b71c1c;
-  --color-brand-800: #8f1414;
+/*
+ * Clean Dee colour palette — EVERY brand colour in the app (including the SVG
+ * logo and header graphic) comes from this block, so a re-theme is one edit.
+ *
+ * brand-*   : header bands, headings, active states        (primary = brand-600)
+ * accent-*  : main call-to-action buttons, radios, sparkle  (primary = accent-500)
+ * on-accent : text colour on accent buttons
+ *
+ * accent-500 is the button fill; accent-700 is a deeper tone used for radios,
+ * outlines and small marks so they stay visible on white.
+ *
+ * ── Current: "firebrick red & lemon chiffon" (chosen) ──
+ * Other palettes tried are kept in the comment at the end of this block.
+ */
+@theme static {
+  --color-brand-50: #fdf2f2;
+  --color-brand-100: #fadcdc;
+  --color-brand-200: #f3b3b3;
+  --color-brand-300: #e88282;
+  --color-brand-400: #d65252;
+  --color-brand-500: #c43333;
+  --color-brand-600: #b22222;
+  --color-brand-700: #941c1c;
+  --color-brand-800: #771717;
+  --color-brand-900: #5a1212;
+
+  --color-accent-50: #fffef4;
+  --color-accent-100: #fffde8;
+  --color-accent-200: #fffcdb;
+  --color-accent-300: #fffbd4;
+  --color-accent-400: #fffad0;
+  --color-accent-500: #fffacd;
+  --color-accent-600: #fff3a6;
+  --color-accent-700: #d9b93a;
+
+  /* #FFFACD is very pale — dark red text on it reads well and ties to the brand. */
+  --color-on-accent: #771717;
+
+  /* Palettes tried before (copy values back here to switch):
+     navy & copper:
+       brand  50 #eef4fa 100 #d6e6f8 200 #b5cfee 300 #86afdc 400 #5389c4
+              500 #2f6ba8 600 #165a8e 700 #124b77 800 #0f3d61 900 #0b2c47
+       accent 50 #fbf1ea 100 #f5dccb 200 #ebb996 300 #df9c6c 400 #d4824c
+              500 #c0672f 600 #a8582a 700 #8a4723        on-accent #ffffff
+     red & yellow-green (accent only, brand = red as now):
+       accent 50 #f6fbea 100 #e9f5cc 200 #d4eb9e 300 #bde06a 400 #a9d645
+              500 #9acd32 600 #86b729 700 #64891b        on-accent #1f2a07 */
+
+  --color-gray-50: #f8f9fb;
+  --color-gray-100: #f1f3f6;
+  --color-gray-200: #e3e7ec;
+  --color-gray-300: #cdd3db;
+  --color-gray-400: #9aa3ae;
+  --color-gray-500: #6b7480;
+  --color-gray-600: #4f5762;
+  --color-gray-700: #3a414a;
+  --color-gray-800: #262c33;
+  --color-gray-900: #161b21;
 }
 
 html {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Horizontally scrollable rows (e.g. filter tabs) without a visible scrollbar */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 body {
-  background: #f8f8f8;
-  color: #111827;
+  background-color: #f6f8fb;
+  min-height: 100dvh;
+  color: var(--color-gray-900);
   -webkit-font-smoothing: antialiased;
+}
+
+/* Plain white surface (kept as a class name so every card/bar shares one look). */
+.glass {
+  background-color: #ffffff;
 }

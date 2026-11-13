@@ -31,6 +31,23 @@ export function isOverdue(t: Task) {
   return !t.is_archived && t.status !== "approved" && !!t.due_date && t.due_date < todayISO();
 }
 
+/** Due date as a short relative phrase with a tone, e.g. "เหลือ 2 วัน" / "เลยกำหนด 1 วัน". */
+export function dueInfo(t: Task): { label: string; tone: "muted" | "ok" | "soon" | "late" } {
+  if (!t.due_date) return { label: "ไม่มีกำหนด", tone: "muted" };
+  if (t.is_archived || t.status === "approved") return { label: `กำหนด ${shortDate(t.due_date)}`, tone: "muted" };
+  const today = new Date(`${todayISO()}T00:00:00`).getTime();
+  const due = new Date(`${t.due_date}T00:00:00`).getTime();
+  const days = Math.round((due - today) / 86_400_000);
+  if (days < 0) return { label: `เลยกำหนด ${-days} วัน`, tone: "late" };
+  if (days === 0) return { label: "ครบกำหนดวันนี้", tone: "soon" };
+  if (days === 1) return { label: "ครบกำหนดพรุ่งนี้", tone: "soon" };
+  return { label: `เหลือ ${days} วัน`, tone: "ok" };
+}
+
+function shortDate(iso: string) {
+  return new Date(`${iso}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+}
+
 export function assigneeLabel(t: Task) {
   if (t.assigned_type === "all") {
     return t.assigned_user_name ? `${t.assigned_user_name} (รับจากงานทุกคน)` : "ทุกคน";

@@ -40,7 +40,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             key={t.id}
             className={cn(
               "pointer-events-auto flex w-full max-w-sm items-start gap-2 rounded-lg px-4 py-3 text-sm text-white shadow-lg",
-              t.kind === "success" ? "bg-gray-900" : "bg-brand-700",
+              t.kind === "success" ? "bg-gray-900" : "bg-red-700",
             )}
           >
             {t.kind === "success" ? (

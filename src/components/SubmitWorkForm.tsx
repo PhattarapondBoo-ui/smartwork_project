@@ -72,12 +72,12 @@ export function SubmitWorkForm({ task, me }: { task: Task; me: AppUser }) {
       {error && <Alert kind="error">{error}</Alert>}
 
       <div>
-        <span className="mb-1.5 block text-sm font-medium text-gray-700">
+        <span className="mb-2 block text-[13px] font-medium text-gray-600">
           รูปภาพผลงาน <span className="font-normal text-gray-400">({files.length}/{MAX_FILES})</span>
         </span>
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
           {files.map((f, i) => (
-            <div key={f.url} className="relative aspect-square overflow-hidden rounded-lg border border-gray-200 bg-gray-100">
+            <div key={f.url} className="relative aspect-square overflow-hidden rounded-2xl bg-gray-100 ring-1 ring-gray-100">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={f.url} alt={`รูปที่ ${i + 1}`} className="h-full w-full object-cover" />
               <button
@@ -94,7 +94,7 @@ export function SubmitWorkForm({ task, me }: { task: Task; me: AppUser }) {
             <button
               type="button"
               onClick={() => inputRef.current?.click()}
-              className="flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-brand-200 text-brand-600 hover:bg-brand-50"
+              className="flex aspect-square flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-brand-200 bg-brand-50/50 text-brand-700 transition hover:border-brand-300 hover:bg-brand-50"
             >
               <ImagePlus className="h-6 w-6" />
               <span className="text-xs">เพิ่มรูป</span>

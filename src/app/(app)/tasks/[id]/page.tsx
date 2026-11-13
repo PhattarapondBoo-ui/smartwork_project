@@ -7,25 +7,29 @@ import {
   Archive,
   ArchiveRestore,
   ArrowLeft,
-  CalendarDays,
+  CalendarClock,
   Check,
+  ClipboardCheck,
   Hand,
+  History,
   MapPin,
-  Play,
-  User,
   PenLine,
+  Play,
+  Send,
   Undo2,
+  User,
 } from "lucide-react";
 import { useProfile } from "@/lib/auth-context";
 import { claimTask, reviewSubmission, setArchived, startTask, subscribeSubmissions, subscribeTask } from "@/lib/api";
 import { errMsg, fmtDate, fmtTs } from "@/lib/format";
-import { SUBMITTABLE, assigneeLabel, canClaim, displayStatus, isOverdue } from "@/lib/status";
+import { SUBMITTABLE, assigneeLabel, canClaim, displayStatus, dueInfo } from "@/lib/status";
 import type { Submission, Task } from "@/lib/types";
+import { HeroPattern } from "@/components/Brand";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SubmissionCard } from "@/components/SubmissionCard";
 import { SubmitWorkForm } from "@/components/SubmitWorkForm";
 import { useToast } from "@/components/toast";
-import { Alert, Button, Card, Field, Spinner, Textarea, cn } from "@/components/ui";
+import { Alert, Button, Card, Field, SectionTitle, Spinner, Textarea, cn } from "@/components/ui";
 
 export default function TaskDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -84,8 +88,10 @@ export default function TaskDetailPage() {
   };
 
   const latest = subs[0];
-  const awaitingReview = isEmployer && !task.is_archived && task.status === "pending_review" && latest?.review_status === "pending";
-  const overdue = isOverdue(task);
+  const awaitingReview =
+    isEmployer && !task.is_archived && task.status === "pending_review" && latest?.review_status === "pending";
+  const due = dueInfo(task);
+  const lastRejected = subs.find((s) => s.review_status === "rejected");
 
   const review = (decision: "approved" | "rejected") => {
     if (!latest) return;
@@ -104,106 +110,131 @@ export default function TaskDetailPage() {
   };
 
   const toggleArchive = () => {
-    const msg = task.is_archived ? "กู้คืนงานนี้กลับมาใช้งาน?" : "ลบงานนี้? (งานจะถูกเก็บเป็น Archived และกู้คืนได้ตลอดเวลา)";
+    const msg = task.is_archived
+      ? "กู้คืนงานนี้กลับมาใช้งาน?"
+      : "ลบงานนี้? (งานจะถูกเก็บเป็น Archived และกู้คืนได้ตลอดเวลา)";
     if (!window.confirm(msg)) return;
-    void run("archive", () => setArchived(task.id, !task.is_archived), task.is_archived ? "กู้คืนงานแล้ว" : "ย้ายงานไป Archived แล้ว");
+    void run(
+      "archive",
+      () => setArchived(task.id, !task.is_archived),
+      task.is_archived ? "กู้คืนงานแล้ว" : "ย้ายงานไป Archived แล้ว",
+    );
   };
 
-  const lastRejected = subs.find((s) => s.review_status === "rejected");
+  // What should the person looking at this page do next?
+  const employeeAction = (() => {
+    if (isEmployer) return null;
+    if (canClaim(task, me.id)) {
+      return (
+        <Button loading={busy === "claim"} onClick={() => void run("claim", () => claimTask(task.id, me), "รับงานเรียบร้อย")}>
+          <Hand className="h-4 w-4" /> รับงานนี้
+        </Button>
+      );
+    }
+    if (mine && task.status === "claimed") {
+      return (
+        <Button
+          variant="outline"
+          loading={busy === "start"}
+          onClick={() => void run("start", () => startTask(task.id), "เริ่มดำเนินการแล้ว")}
+        >
+          <Play className="h-4 w-4" /> เริ่มทำงาน
+        </Button>
+      );
+    }
+    return null;
+  })();
 
   return (
-    <div className="space-y-4">
-      <Link href="/tasks" className="inline-flex items-center gap-1 text-sm text-gray-600 hover:text-brand-700">
-        <ArrowLeft className="h-4 w-4" /> กลับ
+    <div className="mx-auto max-w-4xl space-y-5">
+      <Link
+        href="/tasks"
+        className="glass inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium text-gray-600 ring-1 ring-gray-200/80 transition hover:text-brand-700"
+      >
+        <ArrowLeft className="h-4 w-4" /> รายการงาน
       </Link>
 
-      <Card className="overflow-hidden">
-        <div className="border-b border-gray-100 bg-brand-50/60 p-4 sm:p-5">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-xs font-semibold text-brand-700">{task.code}</div>
-              <h1 className="text-lg font-bold text-gray-900 sm:text-xl">{task.title}</h1>
-            </div>
-            <StatusBadge status={displayStatus(task)} />
-          </div>
+      {/* ------------------------------------------------ hero */}
+      <section
+        className={cn(
+          "relative overflow-hidden rounded-xl rounded-br-[3rem] bg-brand-600 px-6 py-7 text-white shadow-sm sm:px-8",
+          task.is_archived && "grayscale-[60%]",
+        )}
+      >
+        <HeroPattern className="pointer-events-none absolute inset-y-0 right-0 h-full w-full opacity-50 sm:w-[55%] sm:opacity-100" />
+        <div className="relative flex flex-wrap items-center gap-2">
+          <span className="rounded-md bg-white/15 px-2.5 py-1 font-mono text-xs tracking-wide text-white">{task.code}</span>
+          <StatusBadge status={displayStatus(task)} />
         </div>
+        <h1 className="relative mt-3 max-w-2xl font-display text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">{task.title}</h1>
+      </section>
 
-        <div className="space-y-4 p-4 sm:p-5">
-          {task.description && <p className="whitespace-pre-wrap text-sm text-gray-700">{task.description}</p>}
+      <section className="glass rounded-xl p-6 shadow-sm ring-1 ring-gray-200/80 sm:p-8">
+        {task.description && (
+          <p className="mb-6 max-w-2xl whitespace-pre-wrap text-[15px] leading-relaxed text-gray-700">{task.description}</p>
+        )}
 
-          <dl className="grid gap-3 text-sm sm:grid-cols-2">
-            <Info icon={MapPin} label="พื้นที่ปฏิบัติงาน" value={task.location || "-"} />
-            <Info
-              icon={CalendarDays}
-              label="วันที่ครบกำหนด"
-              value={`${fmtDate(task.due_date)}${overdue ? " (เลยกำหนด)" : ""}`}
-              danger={overdue}
-            />
-            <Info icon={User} label="ผู้รับผิดชอบ" value={assigneeLabel(task)} />
-            <Info icon={PenLine} label="สร้างโดย" value={`${task.created_by_name} · ${fmtTs(task.created_at)}`} />
-          </dl>
+        <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <InfoTile icon={MapPin} label="พื้นที่" value={task.location || "-"} />
+          <InfoTile
+            icon={CalendarClock}
+            label="ครบกำหนด"
+            value={fmtDate(task.due_date)}
+            note={due.tone !== "muted" ? due.label : undefined}
+            tone={due.tone === "late" ? "danger" : due.tone === "soon" ? "warn" : undefined}
+          />
+          <InfoTile icon={User} label="ผู้รับผิดชอบ" value={assigneeLabel(task)} />
+          <InfoTile icon={PenLine} label="สร้างโดย" value={task.created_by_name} note={fmtTs(task.created_at)} />
+        </dl>
 
-          {/* ---------------- Employee actions ---------------- */}
-          {!isEmployer && (
-            <div className="space-y-3 border-t border-gray-100 pt-4">
-              {canClaim(task, me.id) && (
-                <Button
-                  className="w-full sm:w-auto"
-                  loading={busy === "claim"}
-                  onClick={() => void run("claim", () => claimTask(task.id, me), "รับงานเรียบร้อย")}
-                >
-                  <Hand className="h-4 w-4" /> รับงาน
-                </Button>
-              )}
-              {!mine && task.assigned_user && (
-                <Alert kind="info">งานนี้ถูกรับโดย {task.assigned_user_name} แล้ว</Alert>
-              )}
-              {mine && task.status === "claimed" && (
-                <Button
-                  variant="outline"
-                  className="w-full sm:w-auto"
-                  loading={busy === "start"}
-                  onClick={() => void run("start", () => startTask(task.id), "เริ่มดำเนินการแล้ว")}
-                >
-                  <Play className="h-4 w-4" /> เริ่มดำเนินการ
-                </Button>
-              )}
-              {mine && task.status === "rejected" && lastRejected && (
-                <Alert kind="error">
-                  งานถูกส่งกลับแก้ไข{lastRejected.review_note ? `: ${lastRejected.review_note}` : ""}
-                </Alert>
-              )}
-              {mine && task.status === "pending_review" && <Alert kind="warning">ส่งงานแล้ว กำลังรอตรวจสอบ</Alert>}
-              {mine && task.status === "approved" && <Alert kind="success">งานนี้ได้รับการอนุมัติแล้ว 🎉</Alert>}
-            </div>
-          )}
+        {!task.is_archived && <ProgressTracker task={task} />}
 
-          {/* ---------------- Employer actions ---------------- */}
-          {isEmployer && (
-            <div className="flex flex-wrap gap-2 border-t border-gray-100 pt-4">
+        {(employeeAction || isEmployer) && (
+          <div className="mt-6 flex flex-wrap items-center gap-2">
+            {employeeAction}
+            {isEmployer && (
               <Button variant={task.is_archived ? "outline" : "danger"} loading={busy === "archive"} onClick={toggleArchive}>
                 {task.is_archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
-                {task.is_archived ? "กู้คืนงาน (Restore)" : "ลบงาน"}
+                {task.is_archived ? "กู้คืนงาน" : "ลบงาน"}
               </Button>
-            </div>
-          )}
-        </div>
-      </Card>
+            )}
+          </div>
+        )}
+      </section>
 
+      {/* ------------------------------------------------ status messages */}
+      {!isEmployer && !mine && task.assigned_user && (
+        <Alert kind="info">งานนี้ถูกรับโดย {task.assigned_user_name} แล้ว</Alert>
+      )}
+      {mine && task.status === "rejected" && lastRejected && (
+        <Alert kind="error">
+          <span className="font-semibold">งานถูกส่งกลับแก้ไข</span>
+          {lastRejected.review_note ? ` — “${lastRejected.review_note}”` : ""}
+        </Alert>
+      )}
+      {mine && task.status === "pending_review" && <Alert kind="warning">ส่งงานแล้ว กำลังรอหัวหน้าตรวจสอบ</Alert>}
+      {mine && task.status === "approved" && <Alert kind="success">งานนี้ได้รับการอนุมัติแล้ว ขอบคุณที่ทำให้ทุกที่สะอาดเอี่ยม ✨</Alert>}
+
+      {/* ------------------------------------------------ submit work */}
       {!isEmployer && mine && !task.is_archived && SUBMITTABLE.includes(task.status) && (
-        <Card className="p-4 sm:p-5">
-          <h2 className="mb-4 font-semibold text-gray-900">{task.status === "rejected" ? "ส่งงานแก้ไข" : "ส่งงาน"}</h2>
+        <Card className="p-5 sm:p-7">
+          <SectionTitle
+            icon={Send}
+            title={task.status === "rejected" ? "ส่งงานแก้ไข" : "ส่งงาน"}
+            hint="ถ่ายรูปผลงานให้เห็นชัด แนบได้สูงสุด 10 รูป พร้อมหมายเหตุ"
+          />
           <SubmitWorkForm task={task} me={me} />
         </Card>
       )}
 
+      {/* ------------------------------------------------ review */}
       {awaitingReview && latest && (
-        <Card className="border-orange-200 p-4 sm:p-5">
-          <h2 className="mb-3 font-semibold text-gray-900">ตรวจงาน</h2>
-          <SubmissionCard sub={latest} index={subs.length} />
-          <div className="mt-4 space-y-3">
-            <Field label="ความเห็นผู้ตรวจ" hint="จำเป็นเมื่อส่งกลับแก้ไข">
-              <Textarea value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} />
+        <Card className="p-5 ring-2 ring-brand-200 sm:p-7">
+          <SectionTitle icon={ClipboardCheck} title="ตรวจงาน" hint={`ส่งโดย ${latest.user_name} · ${fmtTs(latest.submitted_at)}`} />
+          <SubmissionCard sub={latest} index={subs.length} bare />
+          <div className="mt-5 space-y-4">
+            <Field label="ความเห็นผู้ตรวจ" hint="จำเป็นเมื่อส่งกลับแก้ไข พนักงานจะเห็นข้อความนี้">
+              <Textarea value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} placeholder="เช่น เก็บมุมห้องเพิ่ม เช็ดกระจกให้ใสขึ้น" />
             </Field>
             <div className="grid grid-cols-2 gap-2 sm:flex">
               <Button variant="success" loading={busy === "approved"} disabled={!!busy} onClick={() => review("approved")}>
@@ -217,19 +248,34 @@ export default function TaskDetailPage() {
         </Card>
       )}
 
+      {/* ------------------------------------------------ history */}
       {canSeeSubs && (
-        <Card className="p-4 sm:p-5">
-          <h2 className="mb-3 font-semibold text-gray-900">
-            ประวัติการส่งงาน <span className="font-normal text-gray-400">({subs.length})</span>
-          </h2>
+        <Card className="p-5 sm:p-7">
+          <SectionTitle
+            icon={History}
+            title="ประวัติการส่งงาน"
+            aside={<span className="rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-800">{subs.length} ครั้ง</span>}
+          />
           {subs.length === 0 ? (
-            <p className="text-sm text-gray-500">ยังไม่มีการส่งงาน</p>
+            <p className="rounded-2xl bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">ยังไม่มีการส่งงาน</p>
           ) : (
-            <div className="space-y-3">
+            <ol className="relative space-y-4 before:absolute before:bottom-3 before:left-[11px] before:top-3 before:w-px before:bg-brand-100">
               {subs.map((s, i) => (
-                <SubmissionCard key={s.id} sub={s} index={subs.length - i} />
+                <li key={s.id} className="relative pl-9">
+                  <span
+                    className={cn(
+                      "absolute left-0 top-4 flex h-6 w-6 items-center justify-center rounded-full ring-4 ring-white",
+                      s.review_status === "approved"
+                        ? "bg-emerald-500"
+                        : s.review_status === "rejected"
+                          ? "bg-red-400"
+                          : "bg-brand-300",
+                    )}
+                  />
+                  <SubmissionCard sub={s} index={subs.length - i} />
+                </li>
               ))}
-            </div>
+            </ol>
           )}
         </Card>
       )}
@@ -237,24 +283,85 @@ export default function TaskDetailPage() {
   );
 }
 
-function Info({
+function InfoTile({
   icon: Icon,
   label,
   value,
-  danger,
+  note,
+  tone,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
-  danger?: boolean;
+  note?: string;
+  tone?: "danger" | "warn";
 }) {
   return (
-    <div className="flex gap-2.5">
-      <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", danger ? "text-brand-600" : "text-gray-400")} />
-      <div className="min-w-0">
-        <dt className="text-xs text-gray-500">{label}</dt>
-        <dd className={cn("break-words text-gray-900", danger && "font-medium text-brand-700")}>{value}</dd>
-      </div>
+    <div className="rounded-lg bg-gray-50 p-3.5 ring-1 ring-gray-100 sm:p-4">
+      <dt className="flex items-center gap-1.5 text-xs text-gray-500">
+        <Icon className="h-3.5 w-3.5 text-brand-500" />
+        {label}
+      </dt>
+      <dd className="mt-1 break-words text-[15px] font-medium text-brand-700">{value}</dd>
+      {note && (
+        <dd
+          className={cn(
+            "mt-0.5 text-xs",
+            tone === "danger" ? "font-medium text-red-600" : tone === "warn" ? "font-medium text-amber-600" : "text-gray-400",
+          )}
+        >
+          {note}
+        </dd>
+      )}
     </div>
+  );
+}
+
+const STEPS: { key: Task["status"]; label: string }[] = [
+  { key: "open", label: "เปิดรับ" },
+  { key: "claimed", label: "รับงาน" },
+  { key: "in_progress", label: "กำลังทำ" },
+  { key: "pending_review", label: "รอตรวจ" },
+  { key: "approved", label: "เสร็จสิ้น" },
+];
+
+/** Segmented progress bar (like a booking stepper); "rejected" shows red on the review step. */
+function ProgressTracker({ task }: { task: Task }) {
+  const rejected = task.status === "rejected";
+  const current = rejected ? 3 : STEPS.findIndex((s) => s.key === task.status);
+  const done = task.status === "approved";
+
+  return (
+    <ol className="mt-7 grid grid-cols-5 gap-1.5">
+      {STEPS.map((s, i) => {
+        const reached = done || i <= current;
+        const isCurrent = !done && i === current;
+        const isRejectedHere = rejected && i === 3;
+        return (
+          <li key={s.key} className="min-w-0">
+            <span
+              className={cn(
+                "block h-1.5 rounded-sm",
+                isRejectedHere ? "bg-red-500" : reached ? "bg-brand-600" : "bg-gray-300",
+              )}
+            />
+            <span
+              className={cn(
+                "mt-2 block truncate text-center text-[11px] sm:text-sm",
+                isRejectedHere
+                  ? "font-medium text-red-600"
+                  : isCurrent || (done && i === STEPS.length - 1)
+                    ? "font-medium text-brand-700"
+                    : reached
+                      ? "text-brand-600/80"
+                      : "text-gray-400",
+              )}
+            >
+              {isRejectedHere ? "ส่งกลับแก้ไข" : s.label}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }

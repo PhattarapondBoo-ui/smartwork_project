@@ -1,7 +1,7 @@
-# Worklist Management
+# Clean Dee
 
-ระบบติดตามและตรวจสอบงานที่มอบหมาย — Next.js 15 + TypeScript + Tailwind CSS + Firebase (Auth, Firestore) — ใช้แพ็กเกจฟรี (Spark) ได้
-ธีมสีแดง-ขาว (#D32F2F / #FFFFFF) รองรับมือถือเต็มรูปแบบ
+Clean Dee — ระบบจัดการงานบริการทำความสะอาด: ติดตามและตรวจสอบงานที่มอบหมาย — Next.js 15 + TypeScript + Tailwind CSS + Firebase (Auth, Firestore) — ใช้แพ็กเกจฟรี (Spark) ได้
+ธีมแดง #B22222 กับเหลืองครีม #FFFACD (ขอบ/ตัวเลือกสีทอง #D9B93A) บนพื้นขาว ฟอนต์ Kanit ลายกราฟิกในแถบหัว รองรับมือถือเต็มรูปแบบ
 
 ## ฟีเจอร์
 

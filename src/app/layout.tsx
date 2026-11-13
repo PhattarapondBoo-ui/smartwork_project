@@ -1,24 +1,26 @@
 import type { Metadata, Viewport } from "next";
-import { Noto_Sans_Thai } from "next/font/google";
+import { Kanit } from "next/font/google";
 import { Providers } from "./providers";
 import "./globals.css";
 
-const font = Noto_Sans_Thai({
+// Kanit: a clean, confident loopless Thai typeface (the style seen on many
+// professional Thai service sites) — friendly but trustworthy.
+const font = Kanit({
   subsets: ["thai", "latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-thai",
+  weight: ["300", "400", "500", "600", "700"],
+  variable: "--font-brand",
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "Worklist Management",
-  description: "ระบบติดตามและตรวจสอบงานที่มอบหมาย",
+  title: "Clean Dee",
+  description: "Clean Dee — ระบบจัดการและตรวจงานทำความสะอาด",
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#D32F2F",
+  themeColor: "#FFFFFF",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
