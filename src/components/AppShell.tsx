@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { ClipboardList, LogOut, SquarePlus, UserCog, Users } from "lucide-react";
+import { ClipboardList, LogOut, SquarePlus, UserCog, Users, Wallet } from "lucide-react";
 import { BrandMark, BrandName } from "./Brand";
 import { useAuth, useProfile } from "@/lib/auth-context";
 import { cn } from "./ui";
@@ -12,11 +12,13 @@ const EMPLOYER_NAV = [
   { href: "/tasks", label: "รายการงาน", icon: ClipboardList },
   { href: "/create", label: "เพิ่มงาน", icon: SquarePlus },
   { href: "/users", label: "จัดการบุคคล", icon: Users },
+  { href: "/payments", label: "การเงิน", icon: Wallet },
   { href: "/account", label: "บัญชี", icon: UserCog },
 ];
 
 const EMPLOYEE_NAV = [
   { href: "/tasks", label: "รายการงาน", icon: ClipboardList },
+  { href: "/payments", label: "การเงิน", icon: Wallet },
   { href: "/account", label: "บัญชี", icon: UserCog },
 ];
 
@@ -72,7 +74,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Avatar name={me.name} />
               <span className="hidden leading-tight lg:block">
                 <span className="block text-sm font-semibold text-gray-900">{me.name}</span>
-                <span className="block text-xs text-gray-500">{me.role === "employer" ? "Employer" : "Employee"}</span>
+                <span className="block text-xs text-gray-500">{me.role === "employer" ? "ผู้ดูแลระบบ" : "ผู้รับจ้าง"}</span>
               </span>
             </Link>
             <button

@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { CalendarHeart, KeyRound, LogOut, Save, ShieldCheck, UserRound } from "lucide-react";
 import { useAuth, useProfile } from "@/lib/auth-context";
 import { changeMyPassword, updateMyProfile } from "@/lib/api";
 import { errMsg, fmtTs } from "@/lib/format";
+import { formatPromptPayId, validatePromptPayId } from "@/lib/promptpay";
 import { Avatar } from "@/components/AppShell";
 import { HeroPattern } from "@/components/Brand";
 import { useToast } from "@/components/toast";
@@ -33,7 +35,7 @@ export default function AccountPage() {
   const { logout } = useAuth();
   const toast = useToast();
 
-  const [profile, setProfile] = useState({ name: me.name, phone: me.phone ?? "" });
+  const [profile, setProfile] = useState({ name: me.name, phone: me.phone ?? "", promptpay_id: formatPromptPayId(me.promptpay_id) });
   const [profileErr, setProfileErr] = useState<string | null>(null);
   const [savingProfile, setSavingProfile] = useState(false);
 
@@ -45,6 +47,10 @@ export default function AccountPage() {
     e.preventDefault();
     setProfileErr(null);
     if (!profile.name.trim()) return setProfileErr("กรุณากรอกชื่อ");
+    if (profile.promptpay_id.trim()) {
+      const ppErr = validatePromptPayId(profile.promptpay_id);
+      if (ppErr) return setProfileErr(ppErr);
+    }
     setSavingProfile(true);
     try {
       await updateMyProfile(me.id, profile);
@@ -91,7 +97,7 @@ export default function AccountPage() {
         <div className="mt-4 flex flex-wrap justify-center gap-2">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-xs font-medium text-white">
             {me.role === "employer" ? <ShieldCheck className="h-3.5 w-3.5" /> : <UserRound className="h-3.5 w-3.5" />}
-            {me.role === "employer" ? "ผู้ดูแล (Employer)" : "พนักงาน (Employee)"}
+            {me.role === "employer" ? "ผู้ดูแลระบบ" : "ผู้รับจ้าง (ฟรีแลนซ์)"}
           </span>
           <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-xs text-white/90">
             <CalendarHeart className="h-3.5 w-3.5" />
@@ -111,6 +117,17 @@ export default function AccountPage() {
             </Field>
             <Field label="เบอร์โทรศัพท์">
               <Input type="tel" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} />
+            </Field>
+            <Field
+              label="พร้อมเพย์สำหรับรับค่าตอบแทน"
+              hint="เบอร์มือถือ 10 หลัก หรือเลขบัตรประชาชน 13 หลัก — ผู้ดูแลจะใช้สร้าง QR โอนค่าตอบแทนให้คุณ"
+            >
+              <Input
+                inputMode="numeric"
+                value={profile.promptpay_id}
+                onChange={(e) => setProfile({ ...profile, promptpay_id: e.target.value })}
+                placeholder="เช่น 081-234-5678"
+              />
             </Field>
             <Field label="ชื่อผู้ใช้" hint="ใช้เข้าสู่ระบบ เปลี่ยนไม่ได้">
               <Input value={me.username} disabled />
@@ -167,7 +184,13 @@ export default function AccountPage() {
         </Card>
       </div>
 
-      <div className="mt-8 flex justify-center">
+      <p className="mt-8 text-center text-sm">
+        <Link href="/privacy" className="text-gray-500 underline hover:text-brand-700">
+          ประกาศความเป็นส่วนตัว (PDPA)
+        </Link>
+      </p>
+
+      <div className="mt-4 flex justify-center">
         <Button variant="danger" onClick={() => void logout()}>
           <LogOut className="h-4 w-4" /> ออกจากระบบ
         </Button>

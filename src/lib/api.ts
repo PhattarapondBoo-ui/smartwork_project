@@ -27,12 +27,15 @@ import {
   updateDoc,
   where,
   writeBatch,
+  type DocumentReference,
   type DocumentSnapshot,
   type Unsubscribe,
 } from "firebase/firestore";
 import { fb, secondary, usernameToEmail } from "./firebase";
 import { compressToDataUrl } from "./image";
-import type { AppUser, AssignedType, Role, Submission, Task, UserStatus } from "./types";
+import { normalizePromptPayId } from "./promptpay";
+import { payBreakdown } from "./tax";
+import type { AppSettings, AppUser, AssignedType, Payment, Role, Submission, Task, UserStatus } from "./types";
 
 type OnError = (e: Error) => void;
 
@@ -129,6 +132,8 @@ export interface NewTaskInput {
   due_date: string;
   assigned_type: AssignedType;
   assigned_user: AppUser | null;
+  /** Pay in baht (0 = not set yet). */
+  price: number;
 }
 
 export async function createTask(input: NewTaskInput, creator: AppUser) {
@@ -158,6 +163,9 @@ export async function createTask(input: NewTaskInput, creator: AppUser) {
       updated_at: serverTimestamp(),
       claimed_at: null,
       last_submitted_at: null,
+      price: Math.max(0, Math.round((input.price || 0) * 100) / 100),
+      payment_id: null,
+      paid_at: null,
     });
   });
   return taskRef.id;
@@ -198,6 +206,35 @@ export async function setArchived(taskId: string, archived: boolean) {
     archived_at: archived ? serverTimestamp() : null,
     updated_at: serverTimestamp(),
   });
+}
+
+/**
+ * Permanently removes an APPROVED task with all its submissions and photos.
+ * Cannot be undone. Rules only allow this for employers on approved tasks.
+ * Children are deleted first and the task document last, in batches.
+ */
+export async function deleteTaskPermanently(taskId: string) {
+  const { db } = fb();
+  const taskRef = doc(db, "tasks", taskId);
+  const snap = await getDoc(taskRef);
+  if (!snap.exists()) return;
+  if ((snap.data() as Task).status !== "approved") throw new Error("ลบถาวรได้เฉพาะงานที่อนุมัติแล้ว");
+
+  const refs: DocumentReference[] = [];
+  const subs = await getDocs(collection(db, "tasks", taskId, "submissions"));
+  for (const s of subs.docs) {
+    const images = await getDocs(collection(s.ref, "images"));
+    images.docs.forEach((img) => refs.push(img.ref));
+    refs.push(s.ref);
+  }
+  refs.push(taskRef);
+
+  // Firestore allows at most 500 writes per batch.
+  for (let i = 0; i < refs.length; i += 400) {
+    const batch = writeBatch(db);
+    refs.slice(i, i + 400).forEach((r) => batch.delete(r));
+    await batch.commit();
+  }
 }
 
 /* ------------------------------------------------------------ submissions */
@@ -265,8 +302,8 @@ export async function getSubmissionImages(taskId: string, submissionId: string):
 
 /* ---------------------------------------------------- old-image cleanup */
 
-/** Photos older than this are deleted to keep Firestore under the free 1 GB. */
-export const IMAGE_RETENTION_DAYS = 60;
+import { IMAGE_RETENTION_DAYS } from "./retention";
+export { IMAGE_RETENTION_DAYS };
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -381,10 +418,11 @@ export async function updateUser(
   await updateDoc(doc(fb().db, "users", id), { ...patch, updated_at: serverTimestamp() });
 }
 
-export async function updateMyProfile(uid: string, patch: { name: string; phone: string }) {
+export async function updateMyProfile(uid: string, patch: { name: string; phone: string; promptpay_id: string }) {
   await updateDoc(doc(fb().db, "users", uid), {
     name: patch.name.trim(),
     phone: patch.phone.trim(),
+    promptpay_id: normalizePromptPayId(patch.promptpay_id),
     updated_at: serverTimestamp(),
   });
 }
@@ -399,4 +437,92 @@ export async function changeMyPassword(currentPassword: string, newPassword: str
     user_id: user.uid,
     changed_at: serverTimestamp(),
   });
+}
+
+/* --------------------------------------------------------------- payments */
+
+/** Employer: set or change the pay for a task (only while it is unpaid). */
+export async function setTaskPrice(taskId: string, price: number) {
+  await updateDoc(doc(fb().db, "tasks", taskId), {
+    price: Math.max(0, Math.round(price * 100) / 100),
+    updated_at: serverTimestamp(),
+  });
+}
+
+/** Employers see every payment; employees only their own (newest first). */
+export function subscribePayments(me: AppUser, cb: (p: Payment[]) => void, onError: OnError): Unsubscribe {
+  const col = collection(fb().db, "payments");
+  const q = me.role === "employer" ? query(col, orderBy("paid_at", "desc")) : query(col, where("employee_id", "==", me.id));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list = snap.docs.map((d) => snapData<Payment>(d));
+      list.sort((a, b) => (b.paid_at?.toMillis() ?? 0) - (a.paid_at?.toMillis() ?? 0));
+      cb(list);
+    },
+    onError,
+  );
+}
+
+/**
+ * Record that the employer has transferred money for `tasks` (all approved,
+ * unpaid, same employee). Writes the payment and marks each task paid in one batch.
+ */
+export async function recordPayment(
+  input: { employee: AppUser; tasks: Task[]; note: string; slip: File | null; withholdingEnabled: boolean },
+  payer: AppUser,
+) {
+  const { db } = fb();
+  if (input.tasks.length === 0) throw new Error("กรุณาเลือกงานที่จะจ่าย");
+  const { gross: amount, withholding, net } = payBreakdown(
+    input.tasks.reduce((sum, t) => sum + (t.price || 0), 0),
+    input.withholdingEnabled,
+  );
+  if (amount <= 0) throw new Error("ยอดเงินต้องมากกว่า 0");
+  const slip = input.slip ? await compressToDataUrl(input.slip) : "";
+
+  const payRef = doc(collection(db, "payments"));
+  const batch = writeBatch(db);
+  batch.set(payRef, {
+    employee_id: input.employee.id,
+    employee_name: input.employee.name,
+    promptpay_id: input.employee.promptpay_id ?? "",
+    amount,
+    withholding_tax: withholding,
+    net_amount: net,
+    task_ids: input.tasks.map((t) => t.id),
+    task_codes: input.tasks.map((t) => t.code),
+    task_titles: input.tasks.map((t) => t.title),
+    note: input.note.trim(),
+    slip,
+    paid_by: payer.id,
+    paid_by_name: payer.name,
+    paid_at: serverTimestamp(),
+    confirmed_at: null,
+  });
+  for (const t of input.tasks) {
+    batch.update(doc(db, "tasks", t.id), { payment_id: payRef.id, paid_at: serverTimestamp() });
+  }
+  await batch.commit();
+}
+
+/** Employee: confirm the money arrived. */
+export async function confirmPaymentReceived(paymentId: string) {
+  await updateDoc(doc(fb().db, "payments", paymentId), { confirmed_at: serverTimestamp() });
+}
+
+/* --------------------------------------------------------------- settings */
+
+const DEFAULT_SETTINGS: AppSettings = { withholding_enabled: false };
+
+export function subscribeSettings(cb: (s: AppSettings) => void): Unsubscribe {
+  return onSnapshot(
+    doc(fb().db, "meta", "settings"),
+    (d) => cb({ ...DEFAULT_SETTINGS, ...(d.exists() ? (d.data() as Partial<AppSettings>) : {}) }),
+    () => cb(DEFAULT_SETTINGS),
+  );
+}
+
+export async function setWithholdingEnabled(enabled: boolean) {
+  await setDoc(doc(fb().db, "meta", "settings"), { withholding_enabled: enabled }, { merge: true });
 }

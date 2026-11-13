@@ -1,4 +1,5 @@
-import { cn } from "./ui";
+/** Local class joiner (Brand is used by server components, so it must not import the client-side ui module). */
+const cn = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
 
 /** Four-point "sparkle" star centred at (x, y). */
 function sparkle(x: number, y: number, r: number) {

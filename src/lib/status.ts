@@ -48,6 +48,11 @@ function shortDate(iso: string) {
   return new Date(`${iso}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short" });
 }
 
+/** Approved, has a price, and no payment recorded yet. */
+export function isUnpaid(t: Task) {
+  return t.status === "approved" && (t.price ?? 0) > 0 && !t.payment_id;
+}
+
 export function assigneeLabel(t: Task) {
   if (t.assigned_type === "all") {
     return t.assigned_user_name ? `${t.assigned_user_name} (รับจากงานทุกคน)` : "ทุกคน";

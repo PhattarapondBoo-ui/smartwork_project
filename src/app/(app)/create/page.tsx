@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { CalendarClock, ChevronRight, FileText, ListChecks, MapPin, Plus, UserRound, Users } from "lucide-react";
+import { Banknote, CalendarClock, ChevronRight, FileText, ListChecks, MapPin, Plus, UserRound, Users } from "lucide-react";
 import { useProfile } from "@/lib/auth-context";
 import { createTask, subscribeAllTasks, subscribeUsers } from "@/lib/api";
 import { errMsg, fmtDate } from "@/lib/format";
+import { formatBaht } from "@/lib/promptpay";
 import { assigneeLabel, displayStatus, todayISO } from "@/lib/status";
 import type { AppUser, Task } from "@/lib/types";
 import { Avatar } from "@/components/AppShell";
@@ -14,7 +15,8 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { useToast } from "@/components/toast";
 import { Alert, Button, Card, EmptyState, Field, Input, PageHero, SectionTitle, Spinner, Textarea, cn } from "@/components/ui";
 
-const EMPTY = { title: "", description: "", location: "", due_date: "", mode: "all" as "all" | "user", assignee: "" };
+const EMPTY = { title: "", description: "", location: "", due_date: "", price: "", mode: "all" as "all" | "user", assignee: "" };
+const QUICK_PRICES = [200, 300, 500, 800, 1000];
 const RECENT_LIMIT = 12;
 
 /** YYYY-MM-DD for today + n days, in local time. */
@@ -53,12 +55,12 @@ function CreateTask() {
   useEffect(() => subscribeAllTasks(setTasks, (e) => setError(errMsg(e))), []);
 
   const activeUsers = useMemo(
-    () => users.filter((u) => u.status === "active").sort((a, b) => a.name.localeCompare(b.name, "th")),
+    () => users.filter((u) => u.status === "active" && u.role === "employee").sort((a, b) => a.name.localeCompare(b.name, "th")),
     [users],
   );
 
   const set =
-    (k: "title" | "description" | "location" | "due_date") =>
+    (k: "title" | "description" | "location" | "due_date" | "price") =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -75,6 +77,7 @@ function CreateTask() {
           description: form.description,
           location: form.location,
           due_date: form.due_date,
+          price: Number(form.price) || 0,
           assigned_type: assignee ? "user" : "all",
           assigned_user: assignee,
         },
@@ -153,9 +156,47 @@ function CreateTask() {
               })}
             </div>
           </Card>
+
+          {/* 3. Pay */}
+          <Card className="p-5 sm:p-7">
+            <SectionTitle icon={Banknote} title="ค่าตอบแทน" hint="จ่ายผ่าน QR พร้อมเพย์ที่หน้าการเงิน หลังอนุมัติงาน" />
+            <Field label="ค่าทำความสะอาด (บาท)" hint="ปล่อยว่างได้ แล้วค่อยกำหนดภายหลังที่หน้ารายละเอียดงาน">
+              <div className="relative">
+                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">฿</span>
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  step="0.01"
+                  value={form.price}
+                  onChange={set("price")}
+                  placeholder="0"
+                  className="pl-9"
+                />
+              </div>
+            </Field>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {QUICK_PRICES.map((v) => {
+                const active = Number(form.price) === v;
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, price: String(v) }))}
+                    className={cn(
+                      "rounded-md px-3.5 py-1.5 text-xs font-medium transition",
+                      active ? "bg-brand-600 text-white" : "bg-white text-gray-600 ring-1 ring-gray-200 hover:ring-brand-300",
+                    )}
+                  >
+                    ฿{v.toLocaleString("th-TH")}
+                  </button>
+                );
+              })}
+            </div>
+          </Card>
         </div>
 
-        {/* 3. Who */}
+        {/* 4. Who */}
         <div className="space-y-5 lg:sticky lg:top-24 lg:self-start">
           <Card className="p-5 sm:p-7">
             <SectionTitle icon={Users} title="ผู้รับผิดชอบ" />
@@ -178,7 +219,7 @@ function CreateTask() {
 
             {form.mode === "user" && (
               <div className="mt-4 max-h-72 space-y-1.5 overflow-y-auto pr-1">
-                {activeUsers.length === 0 && <p className="text-sm text-gray-500">ยังไม่มีผู้ใช้ที่เปิดใช้งาน</p>}
+                {activeUsers.length === 0 && <p className="text-sm text-gray-500">ยังไม่มีผู้รับจ้างที่เปิดใช้งาน — เพิ่มได้ที่หน้าจัดการบุคคล</p>}
                 {activeUsers.map((u) => {
                   const selected = form.assignee === u.id;
                   return (
@@ -196,7 +237,6 @@ function CreateTask() {
                         <span className="block truncate text-sm font-medium text-gray-900">{u.name}</span>
                         <span className="block truncate text-xs text-gray-500">
                           @{u.username}
-                          {u.role === "employer" ? " · Employer" : ""}
                         </span>
                       </span>
                       <Radio checked={selected} />
@@ -236,6 +276,7 @@ function CreateTask() {
                     <th className="px-4 py-4 font-medium">พื้นที่</th>
                     <th className="px-4 py-4 font-medium">ผู้รับผิดชอบ</th>
                     <th className="px-4 py-4 font-medium">ครบกำหนด</th>
+                    <th className="px-4 py-4 text-right font-medium">ค่าตอบแทน</th>
                     <th className="px-6 py-4 font-medium">สถานะ</th>
                   </tr>
                 </thead>
@@ -251,6 +292,7 @@ function CreateTask() {
                       <td className="px-4 py-4 text-gray-600">{t.location}</td>
                       <td className="px-4 py-4 text-gray-600">{assigneeLabel(t)}</td>
                       <td className="whitespace-nowrap px-4 py-4 text-gray-600">{fmtDate(t.due_date)}</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-right text-gray-700">{t.price ? formatBaht(t.price) : "-"}</td>
                       <td className="px-6 py-4">
                         <StatusBadge status={displayStatus(t)} />
                       </td>

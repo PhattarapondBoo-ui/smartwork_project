@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   Archive,
@@ -16,15 +16,28 @@ import {
   PenLine,
   Play,
   Send,
+  Trash2,
+  Banknote,
+  Pencil,
   Undo2,
   User,
 } from "lucide-react";
 import { useProfile } from "@/lib/auth-context";
-import { claimTask, reviewSubmission, setArchived, startTask, subscribeSubmissions, subscribeTask } from "@/lib/api";
+import {
+  claimTask,
+  deleteTaskPermanently,
+  reviewSubmission,
+  setArchived,
+  setTaskPrice,
+  startTask,
+  subscribeSubmissions,
+  subscribeTask,
+} from "@/lib/api";
 import { errMsg, fmtDate, fmtTs } from "@/lib/format";
 import { SUBMITTABLE, assigneeLabel, canClaim, displayStatus, dueInfo } from "@/lib/status";
 import type { Submission, Task } from "@/lib/types";
 import { HeroPattern } from "@/components/Brand";
+import { formatBaht } from "@/lib/promptpay";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SubmissionCard } from "@/components/SubmissionCard";
 import { SubmitWorkForm } from "@/components/SubmitWorkForm";
@@ -35,6 +48,7 @@ export default function TaskDetailPage() {
   const { id } = useParams<{ id: string }>();
   const me = useProfile();
   const toast = useToast();
+  const router = useRouter();
   const isEmployer = me.role === "employer";
 
   const [task, setTask] = useState<Task | null | undefined>(undefined);
@@ -121,6 +135,37 @@ export default function TaskDetailPage() {
     );
   };
 
+  const deleteForever = async () => {
+    const unpaidWarn = (task.price ?? 0) > 0 && !task.payment_id ? "\n\n⚠️ งานนี้ยังไม่ได้บันทึกการจ่ายค่าตอบแทน" : "";
+    const ok = window.confirm(
+      `ลบงาน "${task.title}" (${task.code}) ออกจากระบบถาวร?\n\nรายละเอียดงาน รูป และประวัติการส่งงานทั้งหมดจะถูกลบ และกู้คืนไม่ได้${unpaidWarn}`,
+    );
+    if (!ok) return;
+    setBusy("delete");
+    try {
+      await deleteTaskPermanently(task.id);
+      toast.success(`ลบงาน "${task.title}" ออกจากระบบแล้ว`);
+      router.replace("/tasks");
+    } catch (e) {
+      toast.error(errMsg(e));
+      setBusy(null);
+    }
+  };
+
+  const editPrice = () => {
+    const raw = window.prompt("ค่าตอบแทนงานนี้ (บาท)", task.price ? String(task.price) : "");
+    if (raw === null) return;
+    const value = Number(raw.replace(/[,\s฿]/g, ""));
+    if (!Number.isFinite(value) || value < 0) {
+      toast.error("กรุณากรอกตัวเลขที่ถูกต้อง");
+      return;
+    }
+    void run("price", () => setTaskPrice(task.id, value), "บันทึกค่าตอบแทนแล้ว");
+  };
+
+  const price = task.price ?? 0;
+  const paid = !!task.payment_id;
+
   // What should the person looking at this page do next?
   const employeeAction = (() => {
     if (isEmployer) return null;
@@ -187,6 +232,49 @@ export default function TaskDetailPage() {
           <InfoTile icon={PenLine} label="สร้างโดย" value={task.created_by_name} note={fmtTs(task.created_at)} />
         </dl>
 
+        {/* pay strip */}
+        {(price > 0 || isEmployer) && (
+          <div
+            className={cn(
+              "mt-3 flex flex-wrap items-center gap-3 rounded-lg px-4 py-3 ring-1",
+              paid ? "bg-emerald-50 ring-emerald-100" : task.status === "approved" && price > 0 ? "bg-accent-50 ring-accent-700/40" : "bg-gray-50 ring-gray-100",
+            )}
+          >
+            <Banknote className={cn("h-5 w-5 shrink-0", paid ? "text-emerald-600" : "text-brand-600")} />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-gray-500">ค่าตอบแทน</p>
+              <p className="text-lg font-semibold text-gray-900">{price > 0 ? formatBaht(price) : "ยังไม่กำหนด"}</p>
+            </div>
+            <span
+              className={cn(
+                "rounded-full px-3 py-1 text-xs font-medium",
+                paid
+                  ? "bg-emerald-100 text-emerald-800"
+                  : task.status === "approved" && price > 0
+                    ? "bg-accent-500 text-on-accent ring-1 ring-accent-700/50"
+                    : "bg-white text-gray-500 ring-1 ring-gray-200",
+              )}
+            >
+              {paid ? `จ่ายแล้ว ${fmtTs(task.paid_at)}` : task.status === "approved" && price > 0 ? "รอจ่าย" : "จ่ายหลังอนุมัติงาน"}
+            </span>
+            {isEmployer && !paid && (
+              <button
+                type="button"
+                onClick={editPrice}
+                disabled={busy === "price"}
+                className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-sm font-medium text-brand-700 hover:bg-white"
+              >
+                <Pencil className="h-3.5 w-3.5" /> แก้ไข
+              </button>
+            )}
+            {isEmployer && !paid && task.status === "approved" && price > 0 && (
+              <Link href="/payments" className="inline-flex items-center gap-1 rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700">
+                ไปจ่ายเงิน
+              </Link>
+            )}
+          </div>
+        )}
+
         {!task.is_archived && <ProgressTracker task={task} />}
 
         {(employeeAction || isEmployer) && (
@@ -196,6 +284,11 @@ export default function TaskDetailPage() {
               <Button variant={task.is_archived ? "outline" : "danger"} loading={busy === "archive"} onClick={toggleArchive}>
                 {task.is_archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
                 {task.is_archived ? "กู้คืนงาน" : "ลบงาน"}
+              </Button>
+            )}
+            {isEmployer && task.status === "approved" && (
+              <Button variant="danger" loading={busy === "delete"} onClick={() => void deleteForever()}>
+                <Trash2 className="h-4 w-4" /> ลบถาวร
               </Button>
             )}
           </div>
@@ -233,7 +326,7 @@ export default function TaskDetailPage() {
           <SectionTitle icon={ClipboardCheck} title="ตรวจงาน" hint={`ส่งโดย ${latest.user_name} · ${fmtTs(latest.submitted_at)}`} />
           <SubmissionCard sub={latest} index={subs.length} bare />
           <div className="mt-5 space-y-4">
-            <Field label="ความเห็นผู้ตรวจ" hint="จำเป็นเมื่อส่งกลับแก้ไข พนักงานจะเห็นข้อความนี้">
+            <Field label="ความเห็นผู้ตรวจ" hint="จำเป็นเมื่อส่งกลับแก้ไข ผู้รับจ้างจะเห็นข้อความนี้">
               <Textarea value={reviewNote} onChange={(e) => setReviewNote(e.target.value)} placeholder="เช่น เก็บมุมห้องเพิ่ม เช็ดกระจกให้ใสขึ้น" />
             </Field>
             <div className="grid grid-cols-2 gap-2 sm:flex">

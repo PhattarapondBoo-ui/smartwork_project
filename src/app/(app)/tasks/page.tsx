@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { BellRing, ChevronRight, Plus, Search } from "lucide-react";
 import { useProfile } from "@/lib/auth-context";
-import { claimTask, purgeOldImages, setArchived, subscribeAllTasks, subscribeEmployeeTasks } from "@/lib/api";
+import { claimTask, deleteTaskPermanently, purgeOldImages, setArchived, subscribeAllTasks, subscribeEmployeeTasks } from "@/lib/api";
 import { errMsg } from "@/lib/format";
 import type { Task } from "@/lib/types";
 import { HeroPattern } from "@/components/Brand";
@@ -15,7 +15,6 @@ import { Alert, EmptyState, Spinner, cn } from "@/components/ui";
 type FilterKey = "all" | "mine" | "open" | "active" | "pending_review" | "rejected" | "approved" | "archived";
 
 const FILTERS: { key: FilterKey; label: string; only?: "employer" | "employee" }[] = [
-  { key: "all", label: "ทั้งหมด" },
   { key: "mine", label: "งานของฉัน", only: "employee" },
   { key: "open", label: "เปิดรับงาน" },
   { key: "active", label: "กำลังดำเนินการ" },
@@ -30,7 +29,7 @@ const ACTIVE: Task["status"][] = ["claimed", "in_progress"];
 function matchesFilter(t: Task, key: FilterKey, uid: string) {
   switch (key) {
     case "all":
-      return true; // employer "all" intentionally includes archived tasks
+      return !t.is_archived; // default view: everything except archived (see the Archived tab)
     case "mine":
       return t.assigned_user === uid;
     case "archived":
@@ -132,6 +131,22 @@ export default function TasksPage() {
   const firstName = me.name.trim().split(/\s+/)[0];
   const today = new Date().toLocaleDateString("th-TH", { weekday: "long", day: "numeric", month: "long" });
 
+  const onDelete = async (t: Task) => {
+    const ok = window.confirm(
+      `ลบงาน "${t.title}" (${t.code}) ออกจากระบบถาวร?\n\nรายละเอียดงาน รูป และประวัติการส่งงานทั้งหมดจะถูกลบ และกู้คืนไม่ได้`,
+    );
+    if (!ok) return;
+    setBusyId(t.id);
+    try {
+      await deleteTaskPermanently(t.id);
+      toast.success(`ลบงาน "${t.title}" ออกจากระบบแล้ว`);
+    } catch (e) {
+      toast.error(errMsg(e));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   return (
     <>
       {/* Hero: greeting on a navy band with an abstract graphic pattern */}
@@ -193,7 +208,7 @@ export default function TasksPage() {
             <button
               key={f.key}
               type="button"
-              onClick={() => setFilter(f.key)}
+              onClick={() => setFilter(filter === f.key ? "all" : f.key)} // tap again to clear
               aria-current={active ? "page" : undefined}
               className={cn(
                 "flex shrink-0 items-center gap-2 rounded-md py-2 pl-4 pr-2 text-sm font-medium transition",
@@ -230,6 +245,7 @@ export default function TasksPage() {
                 busy={busyId === t.id}
                 onClaim={onClaim}
                 onToggleArchive={onToggleArchive}
+                onDelete={onDelete}
               />
             ))}
           </div>

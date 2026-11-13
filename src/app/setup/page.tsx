@@ -59,7 +59,7 @@ export default function SetupPage() {
   }
 
   return (
-    <AuthScreen title="ตั้งค่าระบบครั้งแรก" subtitle="สร้างบัญชี Employer (ผู้ดูแลระบบ) คนแรก">
+    <AuthScreen title="ตั้งค่าระบบครั้งแรก" subtitle="สร้างบัญชีผู้ดูแลระบบคนแรก">
       <form onSubmit={onSubmit} className="space-y-4">
         {error && <Alert kind="error">{error}</Alert>}
         <Field label="ชื่อผู้ใช้ (Username)" hint="a-z, 0-9, . _ -" required>

@@ -24,7 +24,7 @@ type Filter = "all" | "employee" | "employer" | "inactive";
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "all", label: "ทั้งหมด" },
-  { key: "employee", label: "พนักงาน" },
+  { key: "employee", label: "ผู้รับจ้าง" },
   { key: "employer", label: "ผู้ดูแล" },
   { key: "inactive", label: "ปิดการใช้งาน" },
 ];
@@ -63,7 +63,7 @@ function Users() {
       <PageHero
         eyebrow="ทีมของคุณ"
         title="จัดการบุคคล"
-        subtitle="เพิ่มพนักงาน กำหนดสิทธิ์ และปิดการใช้งานบัญชีที่ไม่ใช้แล้ว"
+        subtitle="เพิ่มผู้รับจ้าง กำหนดสิทธิ์ และปิดการใช้งานบัญชีที่ไม่ใช้แล้ว"
         action={
           <Button onClick={() => setAdding(true)}>
             <UserPlus className="h-4 w-4" /> เพิ่มผู้ใช้
@@ -71,7 +71,7 @@ function Users() {
         }
       >
         <div className="flex flex-wrap gap-3">
-          <Stat label="พนักงาน" value={counts.employee} />
+          <Stat label="ผู้รับจ้าง" value={counts.employee} />
           <Stat label="ผู้ดูแล" value={counts.employer} />
           <Stat label="ปิดการใช้งาน" value={counts.inactive} muted />
         </div>
@@ -181,7 +181,7 @@ function PersonCard({ user: u, isSelf, onEdit }: { user: AppUser; isSelf: boolea
           )}
         >
           {u.role === "employer" ? <ShieldCheck className="h-3.5 w-3.5" /> : <UserRound className="h-3.5 w-3.5" />}
-          {u.role === "employer" ? "ผู้ดูแล" : "พนักงาน"}
+          {u.role === "employer" ? "ผู้ดูแล" : "ผู้รับจ้าง"}
         </span>
         {u.phone && (
           <span className="inline-flex items-center gap-1 rounded-full bg-white/80 px-2.5 py-1 text-xs text-gray-600 ring-1 ring-gray-100">
@@ -198,7 +198,7 @@ function PersonCard({ user: u, isSelf, onEdit }: { user: AppUser; isSelf: boolea
 
 function RolePicker({ value, onChange, disabled }: { value: Role; onChange: (r: Role) => void; disabled?: boolean }) {
   const options: { key: Role; title: string; text: string; icon: typeof UserRound }[] = [
-    { key: "employee", title: "พนักงาน", text: "รับงานและส่งงาน", icon: UserRound },
+    { key: "employee", title: "ผู้รับจ้าง", text: "รับงานและส่งงาน", icon: UserRound },
     { key: "employer", title: "ผู้ดูแล", text: "สร้างและตรวจงาน", icon: ShieldCheck },
   ];
   return (

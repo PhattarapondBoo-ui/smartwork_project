@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Archive, ArchiveRestore, ArrowUpRight, CalendarClock, Hand, Lock, MapPin, Users } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowUpRight, Banknote, CalendarClock, Hand, Lock, MapPin, Trash2, Users } from "lucide-react";
+import { formatBaht } from "@/lib/promptpay";
 import { canClaim, displayStatus, dueInfo } from "@/lib/status";
 import type { AppUser, Task } from "@/lib/types";
 import { Avatar } from "./AppShell";
@@ -14,6 +15,7 @@ interface Props {
   busy?: boolean;
   onClaim?: (t: Task) => void;
   onToggleArchive?: (t: Task) => void;
+  onDelete?: (t: Task) => void;
 }
 
 const DUE_TONE = {
@@ -23,7 +25,7 @@ const DUE_TONE = {
   late: "bg-red-50 text-red-700 ring-1 ring-inset ring-red-200",
 };
 
-export function TaskCard({ task: t, me, busy, onClaim, onToggleArchive }: Props) {
+export function TaskCard({ task: t, me, busy, onClaim, onToggleArchive, onDelete }: Props) {
   const isEmployer = me.role === "employer";
   const mine = t.assigned_user === me.id;
   const claimable = canClaim(t, me.id);
@@ -61,6 +63,22 @@ export function TaskCard({ task: t, me, busy, onClaim, onToggleArchive }: Props)
           <CalendarClock className="h-3.5 w-3.5 shrink-0 opacity-70" />
           {due.label}
         </span>
+        {(t.price ?? 0) > 0 && (
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 rounded-lg px-2 py-1",
+              t.payment_id
+                ? "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200"
+                : t.status === "approved"
+                  ? "bg-accent-50 text-on-accent ring-1 ring-inset ring-accent-700/50"
+                  : "bg-white/70 text-gray-700 ring-1 ring-inset ring-gray-200/70",
+            )}
+          >
+            <Banknote className="h-3.5 w-3.5 shrink-0 opacity-70" />
+            {formatBaht(t.price!)}
+            {t.payment_id ? " · จ่ายแล้ว" : t.status === "approved" ? " · รอจ่าย" : ""}
+          </span>
+        )}
       </div>
 
       <div className="mt-auto flex items-center gap-3 pt-4">
@@ -82,6 +100,19 @@ export function TaskCard({ task: t, me, busy, onClaim, onToggleArchive }: Props)
             </>
           )}
         </div>
+
+        {isEmployer && t.status === "approved" && onDelete && (
+          <button
+            type="button"
+            onClick={() => onDelete(t)}
+            disabled={busy}
+            title="ลบถาวร (งานที่อนุมัติแล้ว)"
+            aria-label="ลบถาวร"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-gray-400 transition hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
+          >
+            <Trash2 className="h-[18px] w-[18px]" />
+          </button>
+        )}
 
         {isEmployer && (
           <button

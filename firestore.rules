@@ -78,6 +78,14 @@ service cloud.firestore {
       allow read, write: if isEmployer();
     }
 
+    // meta/settings: app-wide options (e.g. withholding tax on/off).
+    match /meta/settings {
+      allow read: if isActive();
+      allow write: if isEmployer()
+        && request.resource.data.keys().hasOnly(['withholding_enabled'])
+        && request.resource.data.withholding_enabled is bool;
+    }
+
     // meta/cleanup remembers when old photos were last purged (once a day).
     match /meta/cleanup {
       allow read, write: if isEmployer();
@@ -99,7 +107,7 @@ service cloud.firestore {
       allow update: if isEmployer()
         // Everyone may edit their own basic info, but not role/status/username.
         || (isActive() && request.auth.uid == userId
-            && changedKeys().hasOnly(['name', 'phone', 'updated_at']));
+            && changedKeys().hasOnly(['name', 'phone', 'promptpay_id', 'updated_at']));
 
       allow delete: if false; // users are deactivated, never deleted
     }
@@ -124,7 +132,9 @@ service cloud.firestore {
       allow update: if isEmployer()
         || (isActive() && resource.data.is_archived == false && (isClaim() || isProgress()));
 
-      allow delete: if false; // "delete" in the UI = archive (is_archived = true)
+      // "ลบงาน" in the UI = archive (is_archived = true). Real deletion is only
+      // for finished (approved) tasks, by an employer ("ลบถาวร").
+      allow delete: if isEmployer() && resource.data.status == 'approved';
     }
 
     // ------------------------------------------------------- submissions
@@ -147,7 +157,43 @@ service cloud.firestore {
         || changedKeys().hasOnly(['images_deleted_at'])
       );
 
-      allow delete: if false; // keep full submission history
+      // History is kept, except when an employer permanently deletes an approved
+      // task (its submissions go with it; the task may already be gone mid-delete).
+      allow delete: if isEmployer()
+        && (!exists(/databases/$(database)/documents/tasks/$(taskId))
+            || taskData(taskId).status == 'approved');
+    }
+
+    // ---------------------------------------------------------- payments
+    // A record that the employer paid an employee (the transfer itself is done
+    // in a banking app). Employees can only read their own and confirm receipt.
+    match /payments/{paymentId} {
+      allow read: if isEmployer()
+        || (isActive() && resource.data.employee_id == request.auth.uid);
+
+      allow create: if isEmployer()
+        && request.resource.data.paid_by == request.auth.uid
+        && request.resource.data.amount is number
+        && request.resource.data.amount > 0
+        && request.resource.data.withholding_tax is number
+        && request.resource.data.withholding_tax >= 0
+        && request.resource.data.net_amount is number
+        // net = amount - tax (allow for floating-point rounding of satang)
+        && request.resource.data.amount - request.resource.data.withholding_tax - request.resource.data.net_amount < 0.01
+        && request.resource.data.amount - request.resource.data.withholding_tax - request.resource.data.net_amount > -0.01
+        && request.resource.data.employee_id is string
+        && request.resource.data.task_ids is list
+        && request.resource.data.task_ids.size() > 0
+        && request.resource.data.slip is string
+        && request.resource.data.slip.size() <= 750000
+        && request.resource.data.confirmed_at == null;
+
+      allow update: if (isEmployer() && changedKeys().hasOnly(['note', 'slip']))
+        || (isActive() && resource.data.employee_id == request.auth.uid
+            && resource.data.confirmed_at == null
+            && changedKeys().hasOnly(['confirmed_at']));
+
+      allow delete: if false; // payment history is permanent
     }
 
     // Photos: one JPEG data URL per document (Firestore max is 1 MiB/doc).

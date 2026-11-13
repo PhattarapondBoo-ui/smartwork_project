@@ -11,7 +11,7 @@ export function RequireEmployer({ children }: { children: ReactNode }) {
     return (
       <div className="flex flex-col items-center gap-3 py-16 text-center">
         <ShieldAlert className="h-10 w-10 text-brand-600" />
-        <p className="text-gray-700">หน้านี้สำหรับ Employer เท่านั้น</p>
+        <p className="text-gray-700">หน้านี้สำหรับผู้ดูแลระบบเท่านั้น</p>
         <Link href="/tasks" className="text-sm font-medium text-brand-700 underline">
           กลับไปหน้ารายการงาน
         </Link>

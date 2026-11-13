@@ -73,11 +73,16 @@ export default function LoginPage() {
           <Alert kind="warning">
             ระบบยังไม่มีผู้ดูแล{" "}
             <Link href="/setup" className="font-semibold underline">
-              ตั้งค่าบัญชี Employer แรก
+              ตั้งค่าบัญชีผู้ดูแลระบบคนแรก
             </Link>
           </Alert>
         )}
         <p className="text-center text-xs text-gray-400">ลืมรหัสผ่าน? กรุณาติดต่อผู้ดูแลระบบ</p>
+        <p className="text-center text-xs">
+          <Link href="/privacy" className="text-gray-500 underline hover:text-brand-700">
+            ประกาศความเป็นส่วนตัว
+          </Link>
+        </p>
       </form>
     </AuthScreen>
   );
